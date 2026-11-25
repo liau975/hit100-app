@@ -530,7 +530,13 @@ function render() {
   <nav class="bnav">${NAVS.map(([k, l, i]) => `<button class="${nv === k ? 'on' : ''}" data-act="nav" data-v="${k}">${icon(i, 22)}${l}</button>`).join('')}</nav></div>`;
   afterRender();
 }
+/* 수식(LaTeX $...$) 표시 */
+window.typeset = function () {
+  if (!window.renderMathInElement) return;
+  try { window.renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}, {left: '\\(', right: '\\)', display: false}, {left: '\\[', right: '\\]', display: true}], ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code', 'input', 'select', 'option'], throwOnError: false}); } catch (e) {}
+};
 function afterRender() {
+  window.typeset();
   if (isStudent()) document.querySelectorAll('.staff-only').forEach(el => el.remove());
   document.querySelectorAll('[data-act]').forEach(el => { if (!actAllowed(el)) el.remove(); });
   const fig = document.getElementById('trend'); if (fig) drawTrend(fig);
@@ -1291,7 +1297,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.3 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.4 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
