@@ -187,6 +187,7 @@ const IDB = {db: null,
   set(k, v) { if (!this.db) return; try { this.db.transaction('kv', 'readwrite').objectStore('kv').put(JSON.parse(JSON.stringify(v)), k); } catch (e) { toast('저장하지 못했어요: ' + e.message); } }
 };
 const LB = {
+  async genItems() { throw '데모 모드에선 AI 문제 만들기를 쓸 수 없어요. 서버를 연결하세요.'; },
   db() { if (memDb) return memDb; try { memDb = JSON.parse(localStorage.getItem('mc2-db') || 'null'); } catch (e) {} memDb = memDb || {users: [], session: null, academies: [], members: [], students: [], exams: [], attempts: []}; memDb.items = memDb.items || []; memDb.worksheets = memDb.worksheets || []; memDb.logs = memDb.logs || []; memDb.todos = memDb.todos || []; return memDb; },
   save() { if (IDB.db) { IDB.set('db', memDb); try { localStorage.removeItem('mc2-db'); } catch (e) {} return; } try { localStorage.setItem('mc2-db', JSON.stringify(memDb)); } catch (e) { toast('기기 저장 공간이 부족해요. 서버 연결을 권장해요'); } },
   h(s) { let h = 5381; for (const c of String(s)) h = (h * 33 ^ c.charCodeAt(0)) >>> 0; return 'h' + h.toString(36); },
@@ -245,6 +246,12 @@ const SB = {
     sb.auth.onAuthStateChange(ev => { if (ev === 'PASSWORD_RECOVERY') { S.recovery = true; renderAuth('newpw'); } });
   },
   chk(r) { if (r.error) throw r.error.message; return r.data; },
+  async genItems(body) {
+    const {data, error} = await sb.functions.invoke('gen-items', {body});
+    if (error) { let m = error.message || String(error); try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (e) {}
+      if (/Failed to send|not found|404/i.test(m)) m = 'AI 기능이 아직 서버에 설치되지 않았어요 (Edge Function gen-items).'; throw m; }
+    if (data && data.error) throw data.error; return (data && data.items) || [];
+  },
   async session() { const {data} = await sb.auth.getSession(); return data.session ? data.session.user : null; },
   async signUp(email, pw) { const d = this.chk(await sb.auth.signUp({email, password: pw})); if (!d.session) throw '확인 메일을 보냈어요. 메일의 링크를 누른 뒤 로그인하세요.'; return d.user; },
   async signIn(email, pw) { return this.chk(await sb.auth.signInWithPassword({email, password: pw})).user; },
@@ -442,8 +449,8 @@ function renderOnboard(adding) {
 /* ---------- 라우팅 / 셸 ---------- */
 const NAV = [['home', '홈', 'home'], ['students', '학생', 'users'], ['exams', '시험', 'file'], ['grade', '채점', 'pen'], ['bank', '문제은행', 'box'], ['settings', '설정', 'gear']];
 const STUDENT_NAV = [['today', '오늘', 'home'], ['planner', '플래너', 'cal'], ['analysis', '내 분석', 'chart'], ['settings', '설정', 'gear']];
-const TITLES = {today: '오늘', planner: '플래너', analysis: '내 분석', home: '홈', students: '학생', student: '학생', exams: '시험', exam: '시험', examEdit: '시험', grade: '채점', report: '보고서', settings: '설정', bank: '문제은행', itemEdit: '문제은행', sheet: '시험지', sheetView: '시험지'};
-const navOf = v => ({analysis: 'analysis', student: isStudent() ? 'analysis' : 'students', exam: 'exams', examEdit: 'exams', report: 'students', itemEdit: 'bank', sheet: 'bank', sheetView: 'bank'}[v] || v);
+const TITLES = {today: '오늘', planner: '플래너', analysis: '내 분석', home: '홈', students: '학생', student: '학생', exams: '시험', exam: '시험', examEdit: '시험', grade: '채점', report: '보고서', settings: '설정', bank: '문제은행', itemEdit: '문제은행', sheet: '시험지', sheetView: '시험지', aiReview: '문제은행'};
+const navOf = v => ({analysis: 'analysis', student: isStudent() ? 'analysis' : 'students', exam: 'exams', examEdit: 'exams', report: 'students', itemEdit: 'bank', sheet: 'bank', sheetView: 'bank', aiReview: 'bank'}[v] || v);
 function go(view, p = null, tab = null) {
   if (view === 'grade' && !(p && p.keep)) S.g = p && p.g ? p.g : (S.g && !p ? S.g : newDraft(p || {}));
   S.menu = false; S.view = view; S.p = p; S.tab = tab; render(); window.scrollTo(0, 0);
@@ -475,7 +482,7 @@ const DEFAULT_PERMS = {
 function permsFor(title) { const st = ((S.academy || {}).settings || {}).perms || {}; return {...(DEFAULT_PERMS[title] || DEFAULT_PERMS.선생님), ...(st[title] || {})}; }
 function can(k) { if (!S.member) return false; if (S.member.role === 'student') return false; if (S.member.role === 'owner') return true; return !!permsFor(roleName(S.member))[k]; }
 const ACT_PERM = {newStudent: 'student_edit', editStudent: 'student_edit', delStudent: 'student_delete', assign: 'student_edit', newExam: 'exam_edit', editExam: 'exam_edit', delExam: 'exam_delete', saveExam: 'exam_edit',
-  gradeStudent: 'grade', gradeExam: 'grade', gradePlanned: 'grade', editAttempt: 'grade', gSave: 'grade', delAttempt: 'attempt_delete', newItem: 'bank_edit', bulkAdd: 'bank_edit', editItem: 'bank_edit', saveItem: 'bank_edit', saveItemNext: 'bank_edit', delItem: 'bank_delete',
+  gradeStudent: 'grade', gradeExam: 'grade', gradePlanned: 'grade', editAttempt: 'grade', gSave: 'grade', delAttempt: 'attempt_delete', newItem: 'bank_edit', bulkAdd: 'bank_edit', aiGen: 'bank_edit', aiSave: 'bank_edit', aiSaveCart: 'bank_edit', editItem: 'bank_edit', saveItem: 'bank_edit', saveItemNext: 'bank_edit', delItem: 'bank_delete',
   noteCause: 'grade', copyCode: 'manage_members', genLink: 'student_edit', openCart: 'sheet', cartToggle: 'sheet', clinicSheet: 'sheet', editSheet: 'sheet', delSheet: 'sheet', sheetSave: 'sheet', sheetPreview: 'sheet', mKick: 'manage_members', saveAcademy: 'academy_settings', bkCopy: 'backup', bkLoad: 'backup', leaveAcad: null};
 const actAllowed = el => { const a = el.dataset.act; if (a === 'nav' && el.dataset.v === 'grade') return can('grade'); const p = ACT_PERM[a]; return !p || can(p); };
 const visibleStudents = () => can('all_students') ? S.students : S.students.filter(s => (s.teacher_ids || []).includes(S.user.id) || s.created_by === S.user.id);
@@ -494,7 +501,7 @@ function userMenu() {
 function render() {
   const nv = navOf(S.view), NAVS = isStudent() ? STUDENT_NAV : NAV;
   if (isStudent() && !['today', 'planner', 'analysis', 'settings', 'report', 'sheetView'].includes(S.view)) S.view = 'today';
-  const body = ({today: vToday, planner: vPlanner, analysis: vAnalysis, home: vHome, students: vStudents, student: vStudent, exams: vExams, exam: vExam, examEdit: vExamEdit, grade: vGrade, report: vReport, settings: vSettings, bank: vBank, itemEdit: vItemEdit, sheet: vSheet, sheetView: vSheetView}[S.view] || vHome)();
+  const body = ({today: vToday, planner: vPlanner, analysis: vAnalysis, home: vHome, students: vStudents, student: vStudent, exams: vExams, exam: vExam, examEdit: vExamEdit, grade: vGrade, report: vReport, settings: vSettings, bank: vBank, itemEdit: vItemEdit, sheet: vSheet, sheetView: vSheetView, aiReview: vAiReview}[S.view] || vHome)();
   root.innerHTML = `<div class="app">
   <aside class="side"><div class="brand"><img src="icon-192.png" alt=""><div><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>${esc(S.academy.name)}</span></div></div>
   ${NAVS.map(([k, l, i]) => `<button class="nav ${nv === k ? 'on' : ''}" data-act="nav" data-v="${k}">${icon(i)}${l}</button>`).join('')}
@@ -954,7 +961,7 @@ function vBank() {
   const list = (S.items || []).filter(i => (!subj || i.subject === subj) && (!f.btype || (i.type && typeMatch(i.type, f.btype))) && (!f.blv || i.level === f.blv) && (!q || [i.type, i.source, i.passage_text, ...(i.questions || []).map(x => x.text)].join(' ').includes(q)))
     .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
   return `<div class="top"><div><h1>문제은행</h1><div class="small">학원 자료를 올려두면 학생 취약 유형에 맞춰 추천하고 시험지로 만들 수 있어요.</div></div>
-  <div class="row"><button class="btn o" data-act="bulkAdd">${icon('plus', 18)}이미지 여러 장 추가</button><button class="btn o" data-act="newItem">${icon('plus', 18)}문제 추가</button>${cartBtn}</div></div>${tabs}
+  <div class="row"><button class="btn r" data-act="aiGen">✨ AI로 문제 만들기</button><button class="btn o" data-act="bulkAdd">${icon('plus', 18)}이미지 여러 장 추가</button><button class="btn o" data-act="newItem">${icon('plus', 18)}문제 추가</button>${cartBtn}</div></div>${tabs}
   <div class="seg" style="margin-bottom:10px">${[['', '전체'], ...Object.entries(SUBJECTS)].map(([k, l]) => `<button class="${subj === k ? 'on' : ''}" data-act="bsub" data-v="${k}">${l}</button>`).join('')}</div>
   <div class="fields" style="margin-bottom:12px"><label>유형<input data-in="btype" list="taxo-${subj || 'kor'}" value="${esc(f.btype || '')}" placeholder="예: 독서>과학"></label>
   <label>난이도<select data-in="blv"><option value="">전체</option>${LV_ORDER.map(l => `<option ${f.blv === l ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -963,7 +970,7 @@ function vBank() {
   ${list.length ? `<div class="cards">${list.map(it => { const inCart = S.cart.includes(it.id);
     return `<div class="card" style="padding:12px;display:grid;gap:8px">${thumb(it)}<div class="row" style="gap:6px"><span class="tag b">${esc(SUBJECTS[it.subject] || '')}${it.subname ? ' ' + esc(it.subname) : ''}</span>${it.type ? `<span class="tag">${esc(it.type)}</span>` : ''}${it.level ? `<span class="lv ${it.level}">${it.level}</span>` : ''}<span class="tag">${it.kind === 'set' ? '지문 세트 · ' + itemQCount(it) + '문항' : '단일'}</span></div>
     ${it.source ? `<span class="small">${esc(it.source)}</span>` : ''}<div class="row"><button class="btn s ${inCart ? '' : 'r'}" data-act="cartToggle" data-id="${it.id}">${inCart ? '담김 ✓' : '담기'}</button><button class="btn o s" data-act="editItem" data-id="${it.id}">수정</button><button class="btn o s" data-act="delItem" data-id="${it.id}">삭제</button></div></div>`; }).join('')}</div>`
-    : `<div class="empty">${(S.items || []).length ? '조건에 맞는 문제가 없어요.' : '아직 문제가 없어요.<br>학원 시험지·교재에서 문제를 캡처해 <b>문제 추가</b>로 올리거나, 잘라둔 이미지를 <b>여러 장 추가</b>로 한 번에 올리세요.'}</div>`}${taxoDatalists()}`;
+    : `<div class="empty">${(S.items || []).length ? '조건에 맞는 문제가 없어요.' : '아직 문제가 없어요.<br><b>✨ AI로 문제 만들기</b>로 원하는 유형의 새 문제를 바로 만들거나,<br>학원 자료를 캡처해 <b>문제 추가</b>로 올리세요.'}</div>`}${taxoDatalists()}`;
 }
 /* 이미지 줄이기 (최대 폭 1400px, JPEG) */
 function compressImage(file) {
@@ -997,7 +1004,8 @@ function vItemEdit() {
   <div class="list">${it.questions.map((qq, i) => `<div class="card"><div class="row" style="justify-content:space-between"><b>${isSet ? `${i + 1}번째 문제` : '문제'}</b>${isSet && it.questions.length > 1 ? `<button class="btn o s" data-act="itQDel" data-i="${i}">삭제</button>` : ''}</div>
     <div style="margin-top:8px">${dropZone('q' + i, qq.img, '문제 이미지')}</div>
     <label style="margin-top:10px">문제 텍스트 (선택)<textarea data-in="itQ" data-i="${i}" data-k="text">${esc(qq.text)}</textarea></label>
-    <div class="fields" style="margin-top:8px"><label>정답<input data-in="itQ" data-i="${i}" data-k="answer" value="${esc(qq.answer)}" placeholder="예: ③ 또는 24"></label></div></div>`).join('')}</div>
+    <div class="fields" style="margin-top:8px"><label>정답<input data-in="itQ" data-i="${i}" data-k="answer" value="${esc(qq.answer)}" placeholder="예: ③ 또는 24"></label></div>
+    <label style="margin-top:8px">해설 (선택)<textarea data-in="itQ" data-i="${i}" data-k="explain">${esc(qq.explain || '')}</textarea></label></div>`).join('')}</div>
   ${isSet ? '<div class="row" style="margin-top:10px"><button class="btn o" data-act="itQAdd">+ 문제 추가</button></div>' : ''}
   <div class="row" style="margin-top:16px"><button class="btn r" data-act="saveItem">저장</button>${it.id ? '' : '<button class="btn o" data-act="saveItemNext">저장하고 하나 더</button>'}<button class="btn o" data-act="cancelItem">취소</button></div>${taxoDatalists()}`;
 }
@@ -1020,6 +1028,58 @@ function bulkForm() {
     closeModal(); toast(`${n}개 올렸어요. 정답은 각 문제의 수정에서 넣을 수 있어요`); S.f.bsub = sub; render();
   };
 }
+/* ---------- AI 문제 만들기 ---------- */
+function aiForm(o = {}, lead = '') {
+  const subj = o.subject || S.f.bsub || 'kor', lvl = o.level || '중';
+  const setOk = s => ['kor', 'eng', 'inq', 'hist', 'etc'].includes(s);
+  modal(`<h2 style="margin:0">✨ AI로 문제 만들기</h2>${lead ? `<p style="margin:0">${esc(lead)}</p>` : ''}
+  <p class="small" style="margin:0">수능·모의고사 형식의 새 문제를 만들어요. 저장하기 전에 확인하고 고를 수 있어요.</p>
+  <div class="fields"><label>과목<select id="ai-sub">${Object.entries(SUBJECTS).map(([k, l]) => `<option value="${k}" ${subj === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+  <label>난이도<select id="ai-lv">${LV_ORDER.map(l => `<option ${lvl === l ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+  <label id="ai-subname-w" style="${subj === 'inq' || subj === 'etc' ? '' : 'display:none'}">과목명<input id="ai-subname" placeholder="예: 생활과 윤리, 물리학Ⅰ" value="${esc(o.subname || '')}"></label>
+  <label>유형${o.types && o.types.length > 1 ? ' <span class="small">(학생 약점: ' + o.types.slice(0, 4).map(esc).join(', ') + ')</span>' : ''}<input id="ai-type" list="taxo-${subj}" value="${esc(o.type || S.f.btype || '')}" placeholder="예: 독서>과학, 빈칸 추론, 수열"></label>
+  <div class="fields"><label>형태<select id="ai-kind">${setOk(subj) ? `<option value="set" ${subj === 'kor' || subj === 'eng' ? 'selected' : ''}>지문 세트 (지문 + 여러 문항)</option>` : ''}<option value="single" ${subj === 'kor' || subj === 'eng' ? '' : 'selected'}>단일 문항</option></select></label>
+  <label><span id="ai-cnt-l">${subj === 'kor' || subj === 'eng' ? '세트 수' : '문항 수'}</span><input id="ai-cnt" type="number" min="1" max="10" value="${subj === 'kor' || subj === 'eng' ? 2 : 5}"></label>
+  <label id="ai-per-w">세트당 문항<input id="ai-per" type="number" min="2" max="5" value="3"></label></div>
+  <label>추가 요청 (선택)<textarea id="ai-note" placeholder="예: 경제 제재로, 그래프 해석 포함 / 함정 선지 많이">${esc(o.note || '')}</textarea></label>
+  <div class="row"><button class="btn r" id="ai-go">만들기</button><button class="btn o" data-act="closeModal">취소</button></div>
+  <p class="small" id="ai-msg" style="margin:0"></p>${taxoDatalists()}`);
+  const $ = id => document.getElementById(id);
+  const sync = () => { const set = $('ai-kind').value === 'set'; $('ai-per-w').style.display = set ? '' : 'none'; $('ai-cnt-l').textContent = set ? '세트 수' : '문항 수'; $('ai-cnt').max = set ? 4 : 10; };
+  $('ai-kind').onchange = sync; sync();
+  $('ai-sub').onchange = () => { const v = $('ai-sub').value; closeModal(); aiForm({...o, subject: v, type: ''}, lead); };
+  $('ai-go').onclick = async () => {
+    const sub = $('ai-sub').value, kind = $('ai-kind').value, lv = $('ai-lv').value, type = $('ai-type').value.trim(), subname = ($('ai-subname') || {}).value || '';
+    const n = Math.max(1, Math.min(kind === 'set' ? 4 : 10, +$('ai-cnt').value || 1)), per = +$('ai-per').value || 3, note = $('ai-note').value.trim();
+    if (!type) { $('ai-msg').textContent = '유형을 입력하세요.'; return; }
+    const btn = $('ai-go'); btn.disabled = true;
+    const jobs = kind === 'set' ? Array.from({length: n}, () => 1) : (() => { const a = []; let r = n; while (r > 0) { a.push(Math.min(5, r)); r -= 5; } return a; })();
+    let done = 0, out = [], errs = [];
+    const tick = () => { $('ai-msg').textContent = `만드는 중… ${done}/${jobs.length} (한 번에 20초~1분 걸려요)`; }; tick();
+    await Promise.all(jobs.map(c => API.genItems({academy_id: S.academy.id, subject: sub, subname, type, level: lv, kind, count: c, perSet: per, note})
+      .then(r => { out = out.concat(r); }).catch(e => errs.push(String(e))).finally(() => { done++; tick(); })));
+    if (!out.length) { btn.disabled = false; $('ai-msg').textContent = '실패: ' + (errs[0] || '결과가 없어요'); return; }
+    closeModal(); S.aiRes = out.map(it => ({...it, _id: uid()})); S.aiPick = new Set(S.aiRes.map(x => x._id)); S.aiFor = o.sid || null; S.aiLast = {...o, subject: sub, type, level: lv};
+    if (errs.length) toast(`일부 실패 (${errs.length}건): ${errs[0]}`); go('aiReview');
+  };
+}
+function vAiReview() {
+  const res = S.aiRes || [], pick = S.aiPick || new Set(), sel = res.filter(x => pick.has(x._id)).length;
+  const qHtml = (q, n) => `<div style="margin-top:10px"><div style="white-space:pre-wrap"><b>${n}.</b> ${esc(q.text)}</div><div class="small" style="margin-top:6px"><b>정답 ${esc(q.answer || '-')}</b>${q.explain ? ` · <span style="white-space:pre-wrap">${esc(q.explain)}</span>` : ''}</div></div>`;
+  return `<div class="top"><div><button class="btn o s" data-act="nav" data-v="bank">← 문제은행</button><h1 style="margin-top:10px">AI가 만든 문제</h1><div class="small">${res.length}개 중 ${sel}개 선택 · 마음에 안 드는 건 체크를 풀고 저장하세요. 저장한 뒤에도 수정할 수 있어요.</div></div>
+  <div class="row"><button class="btn o" data-act="aiGen">다시 만들기</button><button class="btn o" data-act="aiSave" ${sel ? '' : 'disabled'}>문제은행에 저장</button><button class="btn r" data-act="aiSaveCart" ${sel ? '' : 'disabled'}>저장하고 시험지 만들기</button></div></div>
+  <p class="small">AI가 만든 문제는 가끔 틀릴 수 있어요. 특히 수학은 정답을 한 번 확인해 주세요.</p>
+  <div class="list">${res.map(it => `<div class="card"><label class="row" style="gap:8px;color:var(--ink);cursor:pointer"><input type="checkbox" data-in="aiPick" data-id="${it._id}" ${pick.has(it._id) ? 'checked' : ''} style="width:auto;min-height:0">
+    <span class="tag b">${esc(SUBJECTS[it.subject] || '')}${it.subname ? ' ' + esc(it.subname) : ''}</span><span class="tag">${esc(it.type)}</span><span class="lv ${it.level}">${it.level}</span><span class="tag">${it.kind === 'set' ? '지문 세트 · ' + it.questions.length + '문항' : '단일'}</span></label>
+    ${it.passage_text ? `<div class="pt" style="white-space:pre-wrap;margin-top:10px;padding:12px;border:1px solid var(--hair);border-radius:10px;background:var(--soft);font-size:14px">${esc(it.passage_text)}</div>` : ''}
+    ${it.questions.map((q, i) => qHtml(q, i + 1)).join('')}</div>`).join('')}</div>`;
+}
+async function aiSaveSel() {
+  const res = (S.aiRes || []).filter(x => (S.aiPick || new Set()).has(x._id)), ids = [];
+  for (const it of res) { const {_id, ...row} = it; row.id = uid(); row.academy_id = S.academy.id; row.created_at = new Date().toISOString(); await save('items', row); ids.push(row.id); }
+  S.aiRes = (S.aiRes || []).filter(x => !(S.aiPick || new Set()).has(x._id)); S.aiPick = new Set(); return ids;
+}
+
 /* ---------- 시험지 ---------- */
 function sheetDraft(src, o = {}) {
   if (src) return JSON.parse(JSON.stringify(src));
@@ -1050,7 +1110,7 @@ function vSheetView() {
   let n = 0; const answers = [];
   const blocks = items.map(it => {
     const qs = it.questions && it.questions.length ? it.questions : [{}], from = n + 1;
-    const qhtml = qs.map(q => { n++; answers.push([n, q.answer || '']); return `<div class="pq"><b class="pn">${n}.</b>${q.img ? `<img src="${esc(q.img)}" alt="">` : ''}${q.text ? `<div class="pt">${esc(q.text)}</div>` : ''}</div>`; }).join('');
+    const qhtml = qs.map(q => { n++; answers.push([n, q.answer || '', q.explain || '']); return `<div class="pq"><b class="pn">${n}.</b>${q.img ? `<img src="${esc(q.img)}" alt="">` : ''}${q.text ? `<div class="pt">${esc(q.text)}</div>` : ''}</div>`; }).join('');
     if (it.kind === 'set') return `<div class="pset"><div class="phead">[${from}~${n}] 다음 글을 읽고 물음에 답하시오.</div>${it.passage_img ? `<img src="${esc(it.passage_img)}" alt="">` : ''}${it.passage_text ? `<div class="pt pbox">${esc(it.passage_text)}</div>` : ''}</div>${qhtml}`;
     return qhtml;
   }).join('');
@@ -1060,13 +1120,18 @@ function vSheetView() {
   <p class="small noprint">인쇄 창에서 대상을 "PDF로 저장"으로 바꾸면 PDF 파일로 저장돼요.</p>
   <div class="paper"><div class="phdr"><div><div class="ptitle">${esc(w.title)}</div><div class="small">${esc(S.academy.name)} · ${fmtDate(w.date)} · ${n}문항</div></div><div class="pname">이름 <span>${esc(names.length === 1 ? names[0] : '')}</span></div></div>
   <div class="pbody ${w.cols === 1 ? 'c1' : ''}">${blocks}</div>
-  ${w.with_answers ? `<div class="pans"><div class="ptitle" style="font-size:18px">정답</div><div class="pansg">${answers.map(([k, a]) => `<div><b>${k}</b> ${esc(a || '-')}</div>`).join('')}</div></div>` : ''}</div>`;
+  ${w.with_answers ? `<div class="pans"><div class="ptitle" style="font-size:18px">정답</div><div class="pansg">${answers.map(([k, a]) => `<div><b>${k}</b> ${esc(a || '-')}</div>`).join('')}</div>
+  ${answers.some(x => x[2]) ? `<div class="ptitle" style="font-size:16px;margin-top:18px">해설</div><div style="display:grid;gap:8px;margin-top:8px;font-size:13px">${answers.filter(x => x[2]).map(([k, a, e]) => `<div><b>${k}번 (${esc(a || '-')})</b> <span style="white-space:pre-wrap">${esc(e)}</span></div>`).join('')}</div>` : ''}</div>` : ''}</div>`;
 }
 /* 학생 맞춤 시험지: 취약 유형별로 문제를 골라 담는다 */
 function makeClinicSheet(sid, subj) {
   const s = stuById(sid), wt = weakTypes(sid, subj).slice(0, 5), picked = [];
   for (const t of wt) { recItems(t.subject, t.type, sid).filter(i => !picked.includes(i.id)).slice(0, 3).forEach(i => picked.push(i.id)); if (picked.length >= 20) break; }
-  if (!picked.length) { toast('문제은행에 이 학생 취약 유형의 문제가 아직 없어요'); S.f.bsub = subj || (wt[0] || {}).subject || ''; S.f.btype = (wt[0] || {}).type || ''; go('bank'); return; }
+  if (!picked.length) {
+    if (!wt.length) { toast('아직 틀린 유형 기록이 없어요'); return; }
+    if (!can('bank_edit')) { toast('문제은행에 이 학생 취약 유형의 문제가 아직 없어요'); return; }
+    aiForm({subject: wt[0].subject, type: wt[0].type, level: '중', sid, types: wt.map(t => t.type)}, '문제은행에 이 학생 약점 유형 문제가 아직 없어요. AI로 새로 만들까요?'); return;
+  }
   S.ws = sheetDraft(null, {title: `${s.name} 맞춤 클리닉 시험지`, student_ids: [sid], items: picked}); go('sheet');
   toast(`취약 유형 ${wt.length}개에서 ${picked.length}세트를 골랐어요`);
 }
@@ -1208,7 +1273,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.2 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.3 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
@@ -1309,6 +1374,10 @@ const ACT = {
   cartToggle: el => { const id = el.dataset.id; S.cart = S.cart.includes(id) ? S.cart.filter(x => x !== id) : [...S.cart, id]; saveCart(); render(); },
   openCart: () => { S.ws = sheetDraft(null); go('sheet'); },
   bulkAdd: () => bulkForm(),
+  aiGen: () => aiForm(S.aiLast || {}),
+  aiSave: async () => { const ids = await aiSaveSel(); toast(`${ids.length}개를 문제은행에 저장했어요`); if (!(S.aiRes || []).length) go('bank'); else render(); },
+  aiSaveCart: async () => { const ids = await aiSaveSel(); const sid = S.aiFor; toast(`${ids.length}개 저장`);
+    S.ws = sheetDraft(null, sid ? {title: `${(stuById(sid) || {}).name || ''} 맞춤 클리닉 시험지`, student_ids: [sid], items: ids} : {items: ids}); go('sheet'); },
   itKind: el => { S.it.kind = el.dataset.v; if (S.it.kind === 'single') S.it.questions = S.it.questions.slice(0, 1); render(); },
   itQAdd: () => { S.it.questions.push({img: '', text: '', answer: ''}); render(); },
   itQDel: el => { S.it.questions.splice(+el.dataset.i, 1); render(); },
@@ -1357,6 +1426,7 @@ const IN = {
   it: el => { S.it[el.dataset.k] = el.value; if (el.dataset.k === 'subject') render(); },
   itPText: el => { S.it.passage_text = el.value; },
   itQ: el => { S.it.questions[+el.dataset.i][el.dataset.k] = el.value; },
+  aiPick: el => { const p = S.aiPick || (S.aiPick = new Set()); el.checked ? p.add(el.dataset.id) : p.delete(el.dataset.id); render(); },
   ws: el => { const k = el.dataset.k; S.ws[k] = k === 'cols' ? +el.value : k === 'with_answers' ? el.value === '1' : el.value; },
   wsStu: el => { if (el.value) { S.ws.student_ids.push(el.value); render(); } },
   mTitle: async el => { try { await API.setMember(S.academy.id, el.dataset.u, {title: el.value}); const m = S.members.find(x => x.user_id === el.dataset.u); if (m) m.title = el.value; if (el.dataset.u === S.user.id) { S.member.title = el.value; syncMyAcads(); } toast('직책을 바꿨어요'); render(); } catch (e) { toast(String(e)); } },
