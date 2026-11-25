@@ -173,6 +173,20 @@ Deno.serve(async (req) => {
     }
     const given = isSet ? String(b.passage || "").slice(0, 12000) : "";
 
+    // 3단계: 검토위원이 정답·선지를 다시 점검하고 고친다 (step=review)
+    let reviewMsg = "";
+    if (b.step === "review" && Array.isArray(b.items) && b.items.length) {
+      const brief = b.items.slice(0, 5).map((it: any, i: number) => ({ no: i + 1, type: it.type, level: it.level,
+        questions: (it.questions || []).map((q: any) => ({ text: String(q.text || "").slice(0, 2500), answer: q.answer, explain: q.explain })) }));
+      reviewMsg = [
+        "[검토 요청] 아래는 다른 출제위원이 만든 초안이다. 너는 수능 검토위원으로서 엄격하게 검토하고 고친 최종본을 save_items로 낸다.",
+        "점검 항목: (1) 정답이 지문·조건으로 유일하게 성립하는가 (2) 오답 선지 각각이 명확한 근거로 틀렸는가, 정답 시비 여지는 없는가 (3) 발문·선지 문체가 수능과 같은가 (4) 요청 난이도에 맞게 변별력이 있는가, 너무 쉬운 선지는 정교하게 바꾼다 (5) 수학은 직접 다시 풀어 정답을 확인한다 (6) 해설이 정확한가.",
+        "문제가 없으면 그대로, 있으면 고쳐서 같은 개수로 낸다. 지문은 바꾸지 않는다(passage는 빈 문자열). 선지는 번호 기호 없이 choices 배열로, 정답은 번호(1~5)로.",
+        given ? `[지문]\n${given}` : "",
+        `[초안]\n${JSON.stringify(brief)}`,
+      ].filter(Boolean).join("\n\n");
+    }
+
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
@@ -182,7 +196,7 @@ Deno.serve(async (req) => {
         system,
         tools: [TOOL],
         tool_choice: { type: "auto" },
-        messages: [{ role: "user", content: user_msg }],
+        messages: [{ role: "user", content: reviewMsg ? `${user_msg}\n\n${reviewMsg}` : user_msg }],
       }),
     });
     const out = await r.json();

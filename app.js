@@ -252,7 +252,12 @@ const SB = {
       if (!p.passage) throw '지문을 만들지 못했어요';
       body = {...body, passage: p.passage};
     }
-    return (await this.genRaw(body)).items || [];
+    let items = (await this.genRaw(body)).items || [];
+    if (body.review && items.length) {
+      try { const r = await this.genRaw({...body, step: 'review', items}); if (r.items && r.items.length) items = r.items.map(it => ({...it, source: (it.source || '') + ' · 검토 완료'})); }
+      catch (e) { items = items.map(it => ({...it, source: (it.source || '') + ' · 검토 실패(초안)'})); }
+    }
+    return items;
   },
   async genRaw(body) {
     const {data, error} = await sb.functions.invoke('gen-items', {body});
@@ -1050,6 +1055,8 @@ function aiForm(o = {}, lead = '') {
   <label><span id="ai-cnt-l">${subj === 'kor' || subj === 'eng' ? '세트 수' : '문항 수'}</span><input id="ai-cnt" type="number" min="1" max="10" value="${subj === 'kor' || subj === 'eng' ? 2 : 5}"></label>
   <label id="ai-per-w">세트당 문항<input id="ai-per" type="number" min="2" max="5" value="3"></label></div>
   <label>품질<select id="ai-q"><option value="best" ${(LS.get('hit100-aiq') || 'best') === 'best' ? 'selected' : ''}>최고 (가장 정교함 · 느리고 비쌈)</option><option value="std" ${LS.get('hit100-aiq') === 'std' ? 'selected' : ''}>표준</option><option value="fast" ${LS.get('hit100-aiq') === 'fast' ? 'selected' : ''}>빠름 (저렴)</option></select></label>
+  <label class="row" style="gap:8px;color:var(--ink)"><input type="checkbox" id="ai-rv" ${LS.get('hit100-airv') === '0' ? '' : 'checked'} style="width:auto;min-height:0"> 검토위원 단계 추가 <span class="small">(정답 오류·쉬운 선지를 한 번 더 고쳐요 · 시간과 비용 약 1.5배)</span></label>
+  <label>참고 문제 (선택)<textarea id="ai-sample" placeholder="원하는 스타일의 기출 문제나 학생이 틀린 문제를 붙여넣으면, 베끼지 않고 같은 유형·난이도로 새로 만들어요" style="min-height:70px">${esc(o.sample || '')}</textarea></label>
   <label>추가 요청 (선택)<textarea id="ai-note" placeholder="예: 경제 제재로, 그래프 해석 포함 / 함정 선지 많이">${esc(o.note || '')}</textarea></label>
   <div class="row"><button class="btn r" id="ai-go">만들기</button><button class="btn o" data-act="closeModal">취소</button></div>
   <p class="small" id="ai-msg" style="margin:0"></p>${taxoDatalists()}`);
@@ -1059,15 +1066,15 @@ function aiForm(o = {}, lead = '') {
   $('ai-sub').onchange = () => { const v = $('ai-sub').value; closeModal(); aiForm({...o, subject: v, type: ''}, lead); };
   $('ai-go').onclick = async () => {
     const sub = $('ai-sub').value, kind = $('ai-kind').value, lv = $('ai-lv').value, type = $('ai-type').value.trim(), subname = ($('ai-subname') || {}).value || '';
-    const n = Math.max(1, Math.min(kind === 'set' ? 4 : 10, +$('ai-cnt').value || 1)), per = +$('ai-per').value || 3, note = $('ai-note').value.trim(), quality = $('ai-q').value; LS.set('hit100-aiq', quality);
+    const n = Math.max(1, Math.min(kind === 'set' ? 4 : 10, +$('ai-cnt').value || 1)), per = +$('ai-per').value || 3, note = $('ai-note').value.trim(), quality = $('ai-q').value, review = $('ai-rv').checked, sample = $('ai-sample').value.trim(); LS.set('hit100-aiq', quality); LS.set('hit100-airv', review ? '1' : '0');
     if (!type) { $('ai-msg').textContent = '유형을 입력하세요.'; return; }
     const btn = $('ai-go'); btn.disabled = true;
     const jobs = kind === 'set' ? Array.from({length: n}, () => 1) : (() => { const a = []; let r = n; while (r > 0) { a.push(Math.min(5, r)); r -= 5; } return a; })();
     let done = 0, out = [], errs = [];
-    const tick = () => { $('ai-msg').textContent = `만드는 중… ${done}/${jobs.length} (지문 → 문제 순서로 만들어서 1~3분 걸려요)`; }; tick();
+    const tick = () => { $('ai-msg').textContent = `만드는 중… ${done}/${jobs.length} (지문 → 문제 → 검토 순서라 2~4분 걸려요)`; }; tick();
     const snip = it => (it.passage_text || ((it.questions || [])[0] || {}).text || '').replace(/\s+/g, ' ').slice(0, 70);
     const avoid = [...(S.aiRes || []), ...(S.items || [])].filter(it => it.subject === sub && (!type || !it.type || typeMatch(it.type, type))).map(snip).filter(Boolean).slice(0, 25);
-    await Promise.all(jobs.map((c, ji) => API.genItems({academy_id: S.academy.id, subject: sub, subname, type, level: lv, kind, count: c, perSet: per, quality, note: [note, jobs.length > 1 ? `(이번 요청은 ${jobs.length}개 중 ${ji + 1}번째. 다른 요청과 소재가 겹치지 않게)` : ''].filter(Boolean).join(' '), avoid})
+    await Promise.all(jobs.map((c, ji) => API.genItems({academy_id: S.academy.id, subject: sub, subname, type, level: lv, kind, count: c, perSet: per, quality, review, sample, note: [note, jobs.length > 1 ? `(이번 요청은 ${jobs.length}개 중 ${ji + 1}번째. 다른 요청과 소재가 겹치지 않게)` : ''].filter(Boolean).join(' '), avoid})
       .then(r => { out = out.concat(r); }).catch(e => errs.push(String(e))).finally(() => { done++; tick(); })));
     if (!out.length) { btn.disabled = false; $('ai-msg').textContent = '실패: ' + (errs[0] || '결과가 없어요'); return; }
     closeModal(); S.aiRes = out.map(it => ({...it, _id: uid()})); S.aiPick = new Set(S.aiRes.map(x => x._id)); S.aiFor = o.sid || null; S.aiLast = {...o, subject: sub, type, level: lv};
