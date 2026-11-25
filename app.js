@@ -1129,7 +1129,8 @@ function schoolCard() {
     <p class="small" style="margin-bottom:0">학교를 고르면 선생님이 확인하고 승인해요.</p>`;
   const un = `<label>대학교 이름<input id="sc-uname" placeholder="예: 서울대학교" value="${esc(m.school_kind === 'univ' ? m.school_name || '' : '')}"></label>
     <div class="row" style="margin-top:8px"><input id="sc-mail" type="email" placeholder="학교 메일 (예: hong@snu.ac.kr)" style="flex:1;min-width:180px"><button class="btn o s" data-act="scSend">인증번호 받기</button></div>
-    ${S.scSent ? `<div class="row" style="margin-top:8px"><input id="sc-code" inputmode="numeric" maxlength="6" placeholder="6자리 인증번호" style="flex:1;min-width:140px"><button class="btn r s" data-act="scVerify">확인</button></div><p class="small">메일이 안 보이면 스팸함도 확인하세요. 10분 안에 입력해야 해요.</p>` : '<p class="small" style="margin-bottom:0">@○○.ac.kr 또는 .edu 학교 메일로 인증번호를 보내요.</p>'}`;
+    ${S.scSent ? `<div class="row" style="margin-top:8px"><input id="sc-code" inputmode="numeric" maxlength="6" placeholder="6자리 인증번호" style="flex:1;min-width:140px"><button class="btn r s" data-act="scVerify">확인</button></div><p class="small">메일이 안 보이면 스팸함도 확인하세요. 10분 안에 입력해야 해요.</p>` : '<p class="small" style="margin-bottom:0">@○○.ac.kr 또는 .edu 학교 메일로 인증번호를 보내요.</p>'}
+    <div class="row" style="margin-top:8px"><button class="linkbtn" data-act="scUnivReq">학교 메일이 없거나 안 되면: 선생님 승인으로 신청</button></div>`;
   return `<div class="card"><h3>✓ 학교 인증</h3>${schoolStatusLine(m)}${kindSeg}${k === 'univ' ? un : hs}
   ${m.school_name ? '<div class="row" style="margin-top:10px"><button class="linkbtn" data-act="scClear">학교 정보 지우기</button></div>' : ''}</div>`;
 }
@@ -1552,6 +1553,8 @@ const ACT = {
     try { await API.school({action: 'send', academy_id: S.academy.id, email, school_name: name}); S.scSent = true; toast('인증번호를 보냈어요'); render(); } catch (e) { toast(String(e)); el.disabled = false; } },
   scVerify: async () => { const code = document.getElementById('sc-code').value.trim();
     try { const r = await API.school({action: 'verify', academy_id: S.academy.id, code}); updMember(r.member); S.scSent = false; toast('학교 인증 완료!'); render(); } catch (e) { toast(String(e)); } },
+  scUnivReq: async () => { const name = document.getElementById('sc-uname').value.trim(); if (name.length < 2) { toast('대학교 이름을 입력하세요'); return; }
+    try { updMember(await API.setMySchool(S.academy.id, 'univ', name, '')); toast('신청했어요. 선생님이 승인하면 인증돼요'); render(); } catch (e) { toast('실패: ' + e); } },
   scClear: () => confirmBox('학교 정보를 지울까요?', async () => { try { await API.clearMySchool(S.academy.id); updMember({...S.member, school_kind: null, school_name: null, school_code: null, school_status: null, school_email: null}); render(); } catch (e) { toast('실패: ' + e); } }),
   scApprove: async el => { try { updMember(await API.approveSchool(S.academy.id, el.dataset.u, el.dataset.v === '1')); toast(el.dataset.v === '1' ? '승인했어요' : '반려했어요'); render(); } catch (e) { toast('실패: ' + e); } },
   postNew: () => postForm(),
