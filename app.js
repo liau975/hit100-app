@@ -247,10 +247,18 @@ const SB = {
   },
   chk(r) { if (r.error) throw r.error.message; return r.data; },
   async genItems(body) {
+    if (body.kind === 'set' && !body.passage && !body.step) {
+      const p = await this.genRaw({...body, step: 'passage'});
+      if (!p.passage) throw '지문을 만들지 못했어요';
+      body = {...body, passage: p.passage};
+    }
+    return (await this.genRaw(body)).items || [];
+  },
+  async genRaw(body) {
     const {data, error} = await sb.functions.invoke('gen-items', {body});
     if (error) { let m = error.message || String(error); try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (e) {}
       if (/404|not found/i.test(m)) m = 'AI 기능이 아직 서버에 설치되지 않았어요 (Edge Function gen-items).'; else if (/Failed to send|timeout|546|504|fetch/i.test(m)) m = '시간이 너무 오래 걸려 연결이 끊겼어요. 세트당 문항을 줄이거나 단일 문항으로 다시 해보세요.'; throw m; }
-    if (data && data.error) throw data.error; return (data && data.items) || [];
+    if (data && data.error) throw data.error; if (body.step === 'passage' && !(data && data.passage)) throw '구버전 AI 함수예요. gen-items 코드를 새로 배포하세요.'; return data || {};
   },
   async session() { const {data} = await sb.auth.getSession(); return data.session ? data.session.user : null; },
   async signUp(email, pw) { const d = this.chk(await sb.auth.signUp({email, password: pw})); if (!d.session) throw '확인 메일을 보냈어요. 메일의 링크를 누른 뒤 로그인하세요.'; return d.user; },
@@ -1055,7 +1063,7 @@ function aiForm(o = {}, lead = '') {
     const btn = $('ai-go'); btn.disabled = true;
     const jobs = kind === 'set' ? Array.from({length: n}, () => 1) : (() => { const a = []; let r = n; while (r > 0) { a.push(Math.min(5, r)); r -= 5; } return a; })();
     let done = 0, out = [], errs = [];
-    const tick = () => { $('ai-msg').textContent = `만드는 중… ${done}/${jobs.length} (한 번에 30초~1분 30초 걸려요)`; }; tick();
+    const tick = () => { $('ai-msg').textContent = `만드는 중… ${done}/${jobs.length} (지문 → 문제 순서로 만들어서 1~3분 걸려요)`; }; tick();
     const snip = it => (it.passage_text || ((it.questions || [])[0] || {}).text || '').replace(/\s+/g, ' ').slice(0, 70);
     const avoid = [...(S.aiRes || []), ...(S.items || [])].filter(it => it.subject === sub && (!type || !it.type || typeMatch(it.type, type))).map(snip).filter(Boolean).slice(0, 25);
     await Promise.all(jobs.map((c, ji) => API.genItems({academy_id: S.academy.id, subject: sub, subname, type, level: lv, kind, count: c, perSet: per, note: [note, jobs.length > 1 ? `(이번 요청은 ${jobs.length}개 중 ${ji + 1}번째. 다른 요청과 소재가 겹치지 않게)` : ''].filter(Boolean).join(' '), avoid})
