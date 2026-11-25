@@ -1049,6 +1049,7 @@ function aiForm(o = {}, lead = '') {
   <div class="fields"><label>형태<select id="ai-kind">${setOk(subj) ? `<option value="set" ${subj === 'kor' || subj === 'eng' ? 'selected' : ''}>지문 세트 (지문 + 여러 문항)</option>` : ''}<option value="single" ${subj === 'kor' || subj === 'eng' ? '' : 'selected'}>단일 문항</option></select></label>
   <label><span id="ai-cnt-l">${subj === 'kor' || subj === 'eng' ? '세트 수' : '문항 수'}</span><input id="ai-cnt" type="number" min="1" max="10" value="${subj === 'kor' || subj === 'eng' ? 2 : 5}"></label>
   <label id="ai-per-w">세트당 문항<input id="ai-per" type="number" min="2" max="5" value="3"></label></div>
+  <label>품질<select id="ai-q"><option value="best" ${(LS.get('hit100-aiq') || 'best') === 'best' ? 'selected' : ''}>최고 (가장 정교함 · 느리고 비쌈)</option><option value="std" ${LS.get('hit100-aiq') === 'std' ? 'selected' : ''}>표준</option><option value="fast" ${LS.get('hit100-aiq') === 'fast' ? 'selected' : ''}>빠름 (저렴)</option></select></label>
   <label>추가 요청 (선택)<textarea id="ai-note" placeholder="예: 경제 제재로, 그래프 해석 포함 / 함정 선지 많이">${esc(o.note || '')}</textarea></label>
   <div class="row"><button class="btn r" id="ai-go">만들기</button><button class="btn o" data-act="closeModal">취소</button></div>
   <p class="small" id="ai-msg" style="margin:0"></p>${taxoDatalists()}`);
@@ -1058,7 +1059,7 @@ function aiForm(o = {}, lead = '') {
   $('ai-sub').onchange = () => { const v = $('ai-sub').value; closeModal(); aiForm({...o, subject: v, type: ''}, lead); };
   $('ai-go').onclick = async () => {
     const sub = $('ai-sub').value, kind = $('ai-kind').value, lv = $('ai-lv').value, type = $('ai-type').value.trim(), subname = ($('ai-subname') || {}).value || '';
-    const n = Math.max(1, Math.min(kind === 'set' ? 4 : 10, +$('ai-cnt').value || 1)), per = +$('ai-per').value || 3, note = $('ai-note').value.trim();
+    const n = Math.max(1, Math.min(kind === 'set' ? 4 : 10, +$('ai-cnt').value || 1)), per = +$('ai-per').value || 3, note = $('ai-note').value.trim(), quality = $('ai-q').value; LS.set('hit100-aiq', quality);
     if (!type) { $('ai-msg').textContent = '유형을 입력하세요.'; return; }
     const btn = $('ai-go'); btn.disabled = true;
     const jobs = kind === 'set' ? Array.from({length: n}, () => 1) : (() => { const a = []; let r = n; while (r > 0) { a.push(Math.min(5, r)); r -= 5; } return a; })();
@@ -1066,7 +1067,7 @@ function aiForm(o = {}, lead = '') {
     const tick = () => { $('ai-msg').textContent = `만드는 중… ${done}/${jobs.length} (지문 → 문제 순서로 만들어서 1~3분 걸려요)`; }; tick();
     const snip = it => (it.passage_text || ((it.questions || [])[0] || {}).text || '').replace(/\s+/g, ' ').slice(0, 70);
     const avoid = [...(S.aiRes || []), ...(S.items || [])].filter(it => it.subject === sub && (!type || !it.type || typeMatch(it.type, type))).map(snip).filter(Boolean).slice(0, 25);
-    await Promise.all(jobs.map((c, ji) => API.genItems({academy_id: S.academy.id, subject: sub, subname, type, level: lv, kind, count: c, perSet: per, note: [note, jobs.length > 1 ? `(이번 요청은 ${jobs.length}개 중 ${ji + 1}번째. 다른 요청과 소재가 겹치지 않게)` : ''].filter(Boolean).join(' '), avoid})
+    await Promise.all(jobs.map((c, ji) => API.genItems({academy_id: S.academy.id, subject: sub, subname, type, level: lv, kind, count: c, perSet: per, quality, note: [note, jobs.length > 1 ? `(이번 요청은 ${jobs.length}개 중 ${ji + 1}번째. 다른 요청과 소재가 겹치지 않게)` : ''].filter(Boolean).join(' '), avoid})
       .then(r => { out = out.concat(r); }).catch(e => errs.push(String(e))).finally(() => { done++; tick(); })));
     if (!out.length) { btn.disabled = false; $('ai-msg').textContent = '실패: ' + (errs[0] || '결과가 없어요'); return; }
     closeModal(); S.aiRes = out.map(it => ({...it, _id: uid()})); S.aiPick = new Set(S.aiRes.map(x => x._id)); S.aiFor = o.sid || null; S.aiLast = {...o, subject: sub, type, level: lv};
