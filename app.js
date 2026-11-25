@@ -1054,7 +1054,7 @@ function aiForm(o = {}, lead = '') {
   modal(`<h2 style="margin:0">✨ AI로 문제 만들기</h2>${lead ? `<p style="margin:0">${esc(lead)}</p>` : ''}
   <p class="small" style="margin:0">수능·모의고사 형식의 새 문제를 만들어요. 저장하기 전에 확인하고 고를 수 있어요.</p>
   <div class="fields"><label>과목<select id="ai-sub">${Object.entries(SUBJECTS).map(([k, l]) => `<option value="${k}" ${subj === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-  <label>난이도<select id="ai-lv">${LV_ORDER.map(l => `<option ${lvl === l ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+  <label>난이도<select id="ai-lv">${LV_ORDER.map(l => `<option value="${l}" ${lvl === l ? 'selected' : ''}>${({상: '상 (킬러)', 중: '중', 하: '하'})[l]}</option>`).join('')}</select></label></div>
   <label id="ai-subname-w" style="${subj === 'inq' || subj === 'etc' ? '' : 'display:none'}">과목명<input id="ai-subname" placeholder="예: 생활과 윤리, 물리학Ⅰ" value="${esc(o.subname || '')}"></label>
   <label>유형${o.types && o.types.length > 1 ? ' <span class="small">(학생 약점: ' + o.types.slice(0, 4).map(esc).join(', ') + ')</span>' : ''}<input id="ai-type" list="taxo-${subj}" value="${esc(o.type || S.f.btype || '')}" placeholder="예: 독서>과학, 빈칸 추론, 수열"></label>
   <div class="fields"><label>형태<select id="ai-kind">${setOk(subj) ? `<option value="set" ${subj === 'kor' || subj === 'eng' ? 'selected' : ''}>지문 세트 (지문 + 여러 문항)</option>` : ''}<option value="single" ${subj === 'kor' || subj === 'eng' ? '' : 'selected'}>단일 문항</option></select></label>
