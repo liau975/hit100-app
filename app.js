@@ -190,6 +190,7 @@ const IDB = {db: null,
   set(k, v) { if (!this.db) return; try { this.db.transaction('kv', 'readwrite').objectStore('kv').put(JSON.parse(JSON.stringify(v)), k); } catch (e) { toast('저장하지 못했어요: ' + e.message); } }
 };
 const LB = {
+  async school() { throw '데모 모드에선 학교 인증을 쓸 수 없어요.'; },
   async ranking() { return []; },
   async posts() { throw '데모 모드에선 게시판을 쓸 수 없어요. 서버를 연결하세요.'; },
   async genItems() { throw '데모 모드에선 AI 문제 만들기를 쓸 수 없어요. 서버를 연결하세요.'; },
@@ -264,6 +265,12 @@ const SB = {
     }
     return items;
   },
+  async school(body) { const {data, error} = await sb.functions.invoke('school', {body});
+    if (error) { let m = error.message || String(error); try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (e) {} if (/404|not found/i.test(m)) m = '학교 인증 기능이 아직 서버에 설치되지 않았어요 (Edge Function school).'; throw m; }
+    if (data && data.error) throw data.error; return data || {}; },
+  async setMySchool(aid, kind, name, code) { return this.chk(await sb.rpc('set_my_school', {p_academy: aid, p_kind: kind, p_name: name, p_code: code})); },
+  async clearMySchool(aid) { this.chk(await sb.rpc('clear_my_school', {p_academy: aid})); },
+  async approveSchool(aid, uid, ok) { return this.chk(await sb.rpc('approve_school', {p_academy: aid, p_user: uid, p_ok: ok})); },
   async ranking(aid, from, to) { return this.chk(await sb.rpc('study_ranking', {p_academy: aid, p_from: from, p_to: to})) || []; },
   async posts(aid) { return this.chk(await sb.from('posts_v').select('*').eq('academy_id', aid).order('created_at', {ascending: false}).limit(200)); },
   async post(id) { return this.chk(await sb.from('posts_v').select('*').eq('id', id).maybeSingle()); },
@@ -570,7 +577,7 @@ function vHome() {
   <div class="kpi"><span class="ic y">${icon('cal')}</span><div><span class="small">예정된 시험</span><b>${planned.length}</b></div></div>
   <div class="kpi"><span class="ic g">${icon('check')}</span><div><span class="small">이번 달 채점</span><b>${mDone.length}</b></div></div>
   <div class="kpi"><span class="ic b">${icon('file')}</span><div><span class="small">등록된 시험</span><b>${S.exams.length}</b></div></div></div>
-  ${DEMO ? '' : homeRankCard()}
+  ${DEMO ? '' : schoolPendingCard() + homeRankCard()}
   ${watch.length ? `<h2>관심 필요 학생 <span class="small">직전 시험보다 5점 이상 떨어졌어요</span></h2><div class="cards">${watch.map(w => `<button class="item" data-act="openStudent" data-id="${w.s.id}"><span class="kpi ic" style="width:38px;height:38px;border:0;box-shadow:none;padding:0;display:grid;place-items:center;background:var(--redt);color:var(--red);border-radius:12px">${icon('alert', 18)}</span><span class="grow"><b>${esc(w.s.name)}</b><br><span class="small">${SUBJECTS[w.sub]} ${w.p.score}점 → ${w.l.score}점</span></span><span class="tag r">${w.l.score - w.p.score}</span></button>`).join('')}</div>` : ''}
   <h2>예정된 시험</h2>${planned.length ? `<div class="list">${planned.map(a => attItem(a, true)).join('')}</div>` : '<div class="empty">예정된 시험이 없어요. 학생 페이지에서 시험을 배정하세요.</div>'}
   <h2>최근 채점</h2>${recent.length ? `<div class="list">${recent.map(a => attItem(a, true)).join('')}</div>` : '<div class="empty">아직 채점 기록이 없어요.</div>'}`;
@@ -645,7 +652,7 @@ function vStudent() {
   } else {
     body = wrongNote(s, evals);
   }
-  return `<div class="top"><div>${isStudent() ? '' : '<button class="btn o s noprint" data-act="nav" data-v="students">← 학생 목록</button>'}<h1 style="margin-top:10px">${esc(s.name)}</h1>
+  return `<div class="top"><div>${isStudent() ? '' : '<button class="btn o s noprint" data-act="nav" data-v="students">← 학생 목록</button>'}<h1 style="margin-top:10px">${esc(s.name)} ${(m => m && m.school_name ? (m.school_status === 'verified' ? schoolBadge(m.school_name) : `<span class="tag y">${esc(shortSchool(m.school_name))} 승인 대기</span>`) : '')(memberOfStudent(s.id))}</h1>
   <div class="small">${esc(s.school)} ${esc(s.grade)}학년 · 국어 ${KOR_TR[s.subject] || '-'} · 수학 ${({pr: '확통', ca: '미적', ge: '기하'})[(s.tracks || {}).math] || '-'}</div></div>
   <div class="row">${!isStudent() && can('student_edit') ? `<span class="small">학생 앱 코드</span>${s.link_code ? `<b style="letter-spacing:.08em">${esc(s.link_code)}</b><button class="btn o s" data-act="copyLink" data-v="${esc(s.link_code)}">복사</button>` : `<button class="btn o s" data-act="genLink" data-id="${s.id}">학생 코드 만들기</button>`}` : ''}<button class="btn o s" data-act="editStudent" data-id="${s.id}">수정</button><button class="btn o s" data-act="delStudent" data-id="${s.id}">삭제</button></div></div>
   <div class="kpis"><div class="kpi"><span class="small">최근 점수${tsub ? ' · ' + SUBJECTS[tsub] : ''}</span><b>${last ? last.r.score : '-'}</b></div><div class="kpi"><span class="small">최근 등급</span><b>${last && last.r.g ? last.r.g : '-'}</b></div>
@@ -1078,19 +1085,23 @@ function loadOnce(key, fn, done) {
 }
 function rankList(rows, limit) {
   const medal = ['🥇', '🥈', '🥉'];
-  return `<div class="list">${rows.slice(0, limit || 100).map((r, i) => `<div class="item" style="cursor:default;${r.is_me ? 'border-color:var(--red);background:var(--redt)' : ''}"><span style="width:34px;text-align:center;font-size:${i < 3 ? 22 : 15}px;font-weight:700">${medal[i] || i + 1}</span><span class="grow"><b>${esc(r.name)}${r.is_me ? ' (나)' : ''}</b></span><b style="font-variant-numeric:tabular-nums">${fmtHM(r.seconds)}</b></div>`).join('')}</div>`;
+  return `<div class="list">${rows.slice(0, limit || 100).map((r, i) => `<div class="item" style="cursor:default;${r.is_me ? 'border-color:var(--red);background:var(--redt)' : ''}"><span style="width:34px;text-align:center;font-size:${i < 3 ? 22 : 15}px;font-weight:700">${medal[i] || i + 1}</span><span class="grow"><b>${esc(r.name)}${r.is_me ? ' (나)' : ''}</b> ${schoolBadge(r.school, true)}</span><b style="font-variant-numeric:tabular-nums">${fmtHM(r.seconds)}</b></div>`).join('')}</div>`;
 }
 function vRank() {
   const k = S.tab || 'week', [from, to] = rankRange(k), off = acSet().rank === 'off' && isStudent();
   const tabs = `<div class="tabs">${[['day', '오늘'], ['week', '이번 주'], ['month', '이번 달']].map(([v, l]) => `<button class="tab ${k === v ? 'on' : ''}" data-act="tab" data-v="${v}">${l}</button>`).join('')}</div>`;
   const head = `<div class="top"><div><h1>${icon('trophy', 26)} 공부 랭킹</h1><div class="small">${esc(S.academy.name)} 학생들의 타이머 공부 시간 순위예요.${isStudent() && acSet().rank !== 'full' ? ' 다른 학생 이름은 가운데가 가려져요.' : ''}</div></div></div>${tabs}`;
   if (off) return head + '<div class="empty">선생님이 랭킹을 꺼두셨어요.</div>';
-  const d = loadOnce('rank|' + k + '|' + to, () => API.ranking(S.academy.id, from, to));
+  let d = loadOnce('rank|' + k + '|' + to, () => API.ranking(S.academy.id, from, to));
   if (!d) return head + '<div class="empty">불러오는 중…</div>';
   if (d.error) return head + `<div class="empty">랭킹을 불러오지 못했어요.<br><span class="small">${esc(d.error)}</span></div>`;
-  if (!d.length) return head + '<div class="empty">아직 기록이 없어요. 오늘 탭의 타이머로 공부를 시작해보세요!</div>';
+  const mySch = S.member.school_status === 'verified' ? S.member.school_name : '';
+  const schools = [...new Set(d.map(r => r.school).filter(Boolean))], sf = S.f.rsch || '';
+  const chips = schools.length ? `<div class="chips" style="margin-bottom:12px"><button class="chip ${!sf ? 'on' : ''}" data-act="rsch" data-v="">전체</button>${(mySch && schools.includes(mySch) ? [mySch, ...schools.filter(x => x !== mySch)] : schools).map(x => `<button class="chip ${sf === x ? 'on' : ''}" data-act="rsch" data-v="${esc(x)}">${x === mySch ? '우리 학교 · ' : ''}${esc(shortSchool(x))}</button>`).join('')}</div>` : '';
+  if (sf) d = d.filter(r => r.school === sf);
+  if (!d.length) return head + chips + '<div class="empty">아직 기록이 없어요. 오늘 탭의 타이머로 공부를 시작해보세요!</div>';
   const me = d.findIndex(r => r.is_me);
-  return head + (me >= 0 ? `<div class="hero" style="margin-bottom:14px"><div><p>내 순위</p><div style="font-size:44px;font-weight:700">${me + 1}위 <span style="font-size:18px;opacity:.9">/ ${d.length}명</span></div></div><div style="text-align:right"><p>${k === 'day' ? '오늘' : k === 'week' ? '이번 주' : '이번 달'} 공부</p><div style="font-size:28px;font-weight:700">${fmtHM(d[me].seconds)}</div>${me > 0 ? `<div class="small" style="color:#fff;opacity:.9">${me}위까지 ${fmtHM(d[me - 1].seconds - d[me].seconds)} 남았어요</div>` : '<div class="small" style="color:#fff">1등이에요! 🎉</div>'}</div></div>` : '') + rankList(d);
+  return head + chips + (me >= 0 ? `<div class="hero" style="margin-bottom:14px"><div><p>내 순위</p><div style="font-size:44px;font-weight:700">${me + 1}위 <span style="font-size:18px;opacity:.9">/ ${d.length}명</span></div></div><div style="text-align:right"><p>${k === 'day' ? '오늘' : k === 'week' ? '이번 주' : '이번 달'} 공부</p><div style="font-size:28px;font-weight:700">${fmtHM(d[me].seconds)}</div>${me > 0 ? `<div class="small" style="color:#fff;opacity:.9">${me}위까지 ${fmtHM(d[me - 1].seconds - d[me].seconds)} 남았어요</div>` : '<div class="small" style="color:#fff">1등이에요! 🎉</div>'}</div></div>` : '') + rankList(d);
 }
 function homeRankCard() {
   const [from, to] = rankRange('week'), key = 'hrank|' + to;
@@ -1099,10 +1110,40 @@ function homeRankCard() {
   return `<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${icon('trophy', 18)} 이번 주 공부 랭킹</h3><button class="btn o s" data-act="nav" data-v="rank">전체 보기</button></div><div style="margin-top:10px">${!d ? '<p class="small">불러오는 중…</p>' : d.length ? rankList(d, 5) : '<p class="small">이번 주 타이머 기록이 아직 없어요.</p>'}</div></div>`;
 }
 
+/* ---------- 학교 인증 ---------- */
+const SCHOOL_KIND = {high: '고등학교', middle: '중학교', univ: '대학교'};
+const shortSchool = n => String(n || '').replace(/고등학교$/, '고').replace(/중학교$/, '중').replace(/대학교$/, '대');
+const schoolBadge = (name, small) => name ? `<span class="tag g" style="${small ? 'font-size:11px;padding:1px 6px' : ''}">✓ ${esc(shortSchool(name))}</span>` : '';
+function memberOfStudent(sid) { return (S.members || []).find(m => m.student_id === sid && m.role === 'student'); }
+function schoolStatusLine(m) {
+  if (!m || !m.school_name) return '<p class="small" style="margin:0">아직 학교 인증을 안 했어요.</p>';
+  const st = {verified: `<span class="tag g">✓ 인증됨</span>`, pending: '<span class="tag y">선생님 승인 대기</span>', rejected: '<span class="tag r">반려됨 · 다시 신청하세요</span>'}[m.school_status] || '';
+  return `<div class="row" style="gap:8px"><b>${esc(m.school_name)}</b><span class="small">${SCHOOL_KIND[m.school_kind] || ''}</span>${st}</div>${m.school_kind === 'univ' && m.school_code ? `<p class="small" style="margin:4px 0 0">${esc(m.school_code)} 메일로 인증</p>` : ''}`;
+}
+function schoolCard() {
+  if (DEMO) return '';
+  const m = S.member, k = S.f.skind || (m.school_kind || 'high'), res = S.schoolRes;
+  const kindSeg = `<div class="seg" style="margin:10px 0">${Object.entries(SCHOOL_KIND).map(([v, l]) => `<button class="${k === v ? 'on' : ''}" data-act="skind" data-v="${v}">${l}</button>`).join('')}</div>`;
+  const hs = `<div class="row"><input id="sc-q" placeholder="학교 이름 (예: 한빛고)" style="flex:1;min-width:160px"><button class="btn o s" data-act="scSearch">검색</button></div>
+    ${res ? (res.error ? `<p class="small">${esc(res.error)}</p>` : res.list.length ? `<div class="list" style="margin-top:8px;max-height:280px;overflow:auto">${res.list.map(x => `<div class="row" style="gap:8px;border-top:1px solid var(--hair);padding-top:8px"><span style="flex:1"><b>${esc(x.name)}</b><br><span class="small">${esc(x.region)} ${esc(x.addr)}</span></span><button class="btn r s" data-act="scPick" data-code="${esc(x.code)}" data-name="${esc(x.name)}">선택</button></div>`).join('')}</div>${res.limited ? '<p class="small">검색 결과가 최대 5개만 보여요. 안 보이면 학교 이름을 더 정확히 입력하세요.</p>' : ''}` : '<p class="small">검색 결과가 없어요.</p>') : ''}
+    <p class="small" style="margin-bottom:0">학교를 고르면 선생님이 확인하고 승인해요.</p>`;
+  const un = `<label>대학교 이름<input id="sc-uname" placeholder="예: 서울대학교" value="${esc(m.school_kind === 'univ' ? m.school_name || '' : '')}"></label>
+    <div class="row" style="margin-top:8px"><input id="sc-mail" type="email" placeholder="학교 메일 (예: hong@snu.ac.kr)" style="flex:1;min-width:180px"><button class="btn o s" data-act="scSend">인증번호 받기</button></div>
+    ${S.scSent ? `<div class="row" style="margin-top:8px"><input id="sc-code" inputmode="numeric" maxlength="6" placeholder="6자리 인증번호" style="flex:1;min-width:140px"><button class="btn r s" data-act="scVerify">확인</button></div><p class="small">메일이 안 보이면 스팸함도 확인하세요. 10분 안에 입력해야 해요.</p>` : '<p class="small" style="margin-bottom:0">@○○.ac.kr 또는 .edu 학교 메일로 인증번호를 보내요.</p>'}`;
+  return `<div class="card"><h3>✓ 학교 인증</h3>${schoolStatusLine(m)}${kindSeg}${k === 'univ' ? un : hs}
+  ${m.school_name ? '<div class="row" style="margin-top:10px"><button class="linkbtn" data-act="scClear">학교 정보 지우기</button></div>' : ''}</div>`;
+}
+function schoolPendingCard() {
+  const pend = (S.members || []).filter(m => m.school_status === 'pending');
+  if (!pend.length || !can('student_edit')) return '';
+  return `<div class="card"><h3>✓ 학교 인증 대기 ${pend.length}명</h3><div class="list">${pend.map(m => `<div class="row" style="gap:8px"><span style="flex:1"><b>${esc(m.name)}</b> <span class="small">${esc(m.school_name)} (${SCHOOL_KIND[m.school_kind] || ''})</span></span><button class="btn r s" data-act="scApprove" data-u="${esc(m.user_id)}" data-v="1">승인</button><button class="btn o s" data-act="scApprove" data-u="${esc(m.user_id)}" data-v="0">반려</button></div>`).join('')}</div></div>`;
+}
+const updMember = m => { if (!m) return; if (m.user_id === S.user.id) S.member = {...S.member, ...m}; const i = (S.members || []).findIndex(x => x.user_id === m.user_id); if (i >= 0) S.members[i] = {...S.members[i], ...m}; };
+
 /* ---------- 게시판 ---------- */
 const BOARD_CATS = ['자유', '질문', '정보', '공지'];
 function ago(t) { const s = (Date.now() - new Date(t)) / 1000; if (s < 60) return '방금'; if (s < 3600) return Math.floor(s / 60) + '분 전'; if (s < 86400) return Math.floor(s / 3600) + '시간 전'; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}`; }
-const who = (x, op) => x.author_name ? esc(x.author_name) + (x.anon ? ' <span class="small">(익명 글)</span>' : '') : (op ? '익명(글쓴이)' : '익명');
+const who = (x, op) => (x.author_name ? esc(x.author_name) + (x.anon ? ' <span class="small">(익명 글)</span>' : '') : (op ? '익명(글쓴이)' : '익명')) + (x.author_school ? ' ' + schoolBadge(x.author_school, true) : '');
 function vBoard() {
   const cat = S.f.bcat || '', off = acSet().board === 'off';
   const head = `<div class="top"><div><h1>${icon('chat', 26)} 게시판</h1><div class="small">${esc(S.academy.name)} 학생·선생님만 보는 공간이에요. 익명 글도 선생님은 작성자를 볼 수 있어요.</div></div>${off ? '' : `<button class="btn r" data-act="postNew">${icon('plus', 18)}글쓰기</button>`}</div>
@@ -1360,6 +1401,7 @@ function vSettings() {
   ${owner ? '' : '<p class="small">직책은 관리자가 바꿀 수 있어요.</p>'}
   <div class="row" style="margin-top:10px"><button class="btn r s" data-act="saveProfile">이름 저장</button></div></div>
 
+  ${isStudent() ? schoolCard() : ''}
   <div class="card"><h3>${icon('key', 18)} 비밀번호 변경</h3>
   <label>현재 비밀번호<span class="pwbox"><input id="st-old" type="password" autocomplete="current-password"><button type="button" class="pweye" data-act="pwEye">보기</button></span></label>
   <label style="margin-top:8px">새 비밀번호 (6자 이상)<span class="pwbox"><input id="st-new" type="password" autocomplete="new-password"><button type="button" class="pweye" data-act="pwEye">보기</button></span></label>
@@ -1399,7 +1441,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.5 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.6 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
@@ -1501,6 +1543,17 @@ const ACT = {
   openCart: () => { S.ws = sheetDraft(null); go('sheet'); },
   bulkAdd: () => bulkForm(),
   bcat: el => { S.f.bcat = el.dataset.v; render(); },
+  rsch: el => { S.f.rsch = el.dataset.v; render(); },
+  skind: el => { S.f.skind = el.dataset.v; S.schoolRes = null; S.scSent = false; render(); },
+  scSearch: async () => { const q = (document.getElementById('sc-q') || {}).value || ''; if (q.trim().length < 2) { toast('두 글자 이상 입력하세요'); return; }
+    try { const r = await API.school({action: 'search', q: q.trim(), kind: S.f.skind || 'high'}); S.schoolRes = {list: r.schools || [], limited: r.limited}; } catch (e) { S.schoolRes = {error: String(e), list: []}; } render(); },
+  scPick: async el => { try { updMember(await API.setMySchool(S.academy.id, S.f.skind || 'high', el.dataset.name, el.dataset.code)); S.schoolRes = null; toast('신청했어요. 선생님이 승인하면 인증돼요'); render(); } catch (e) { toast('실패: ' + e); } },
+  scSend: async el => { const email = document.getElementById('sc-mail').value.trim(), name = document.getElementById('sc-uname').value.trim(); el.disabled = true;
+    try { await API.school({action: 'send', academy_id: S.academy.id, email, school_name: name}); S.scSent = true; toast('인증번호를 보냈어요'); render(); } catch (e) { toast(String(e)); el.disabled = false; } },
+  scVerify: async () => { const code = document.getElementById('sc-code').value.trim();
+    try { const r = await API.school({action: 'verify', academy_id: S.academy.id, code}); updMember(r.member); S.scSent = false; toast('학교 인증 완료!'); render(); } catch (e) { toast(String(e)); } },
+  scClear: () => confirmBox('학교 정보를 지울까요?', async () => { try { await API.clearMySchool(S.academy.id); updMember({...S.member, school_kind: null, school_name: null, school_code: null, school_status: null, school_email: null}); render(); } catch (e) { toast('실패: ' + e); } }),
+  scApprove: async el => { try { updMember(await API.approveSchool(S.academy.id, el.dataset.u, el.dataset.v === '1')); toast(el.dataset.v === '1' ? '승인했어요' : '반려했어요'); render(); } catch (e) { toast('실패: ' + e); } },
   postNew: () => postForm(),
   openPost: el => go('post', el.dataset.id),
   postLike: async el => { try { await API.like(el.dataset.id, el.dataset.v === '1'); boardRefresh(); } catch (e) { toast('실패: ' + e); } },

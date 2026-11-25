@@ -113,7 +113,9 @@ drop policy if exists likes_del on post_likes;
 create policy likes_del on post_likes for delete using (user_id = auth.uid());
 
 -- 익명 처리된 읽기용 view: 익명 글은 학생끼리 이름이 안 보이고, 선생님은 볼 수 있음
-create or replace view posts_v as
+drop view if exists comments_v;
+drop view if exists posts_v;
+create view posts_v as
 select p.id, p.academy_id, p.category, p.title, p.body, p.created_at, p.anon,
   case when p.anon and not is_staff(p.academy_id) and p.author_id <> auth.uid() then null else p.author_name end as author_name,
   (p.author_id = auth.uid()) as mine,
@@ -123,7 +125,7 @@ select p.id, p.academy_id, p.category, p.title, p.body, p.created_at, p.anon,
 from posts p
 where is_member(p.academy_id);
 
-create or replace view comments_v as
+create view comments_v as
 select c.id, c.post_id, c.academy_id, c.body, c.created_at, c.anon,
   case when c.anon and not is_staff(c.academy_id) and c.author_id <> auth.uid() then null else c.author_name end as author_name,
   (c.author_id = auth.uid()) as mine,
