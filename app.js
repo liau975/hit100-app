@@ -266,8 +266,8 @@ const SB = {
     return items;
   },
   async school(body) { let {data, error} = await sb.functions.invoke(S._schoolFn || 'school', {body});
-    if (error && !S._schoolFn && /404|not found/i.test(error.message || '') ) { const r = await sb.functions.invoke('super-api', {body}); if (!r.error || !/404|not found/i.test(r.error.message || '')) { S._schoolFn = 'super-api'; data = r.data; error = r.error; } }
-    if (error) { let m = error.message || String(error); try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (e) {} if (/404|not found/i.test(m)) m = '학교 인증 기능이 아직 서버에 설치되지 않았어요 (Edge Function school).'; throw m; }
+    if (error && !S._schoolFn && /404|not found|Failed to send|fetch/i.test(error.message || '') ) { const r = await sb.functions.invoke('super-api', {body}); if (!r.error || !/404|not found|Failed to send|fetch/i.test(r.error.message || '')) { S._schoolFn = 'super-api'; data = r.data; error = r.error; } }
+    if (error) { let m = error.message || String(error); try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (e) {} if (/404|not found|Failed to send|fetch/i.test(m)) m = '학교 인증 서버 함수에 연결하지 못했어요. Supabase의 School 함수 코드가 최신인지, Verify JWT가 꺼져 있는지 확인하세요.'; throw m; }
     if (data && data.error) throw data.error; return data || {}; },
   async setMySchool(aid, kind, name, code) { return this.chk(await sb.rpc('set_my_school', {p_academy: aid, p_kind: kind, p_name: name, p_code: code})); },
   async clearMySchool(aid) { this.chk(await sb.rpc('clear_my_school', {p_academy: aid})); },
