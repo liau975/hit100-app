@@ -336,6 +336,7 @@ alter table academies add column if not exists settings jsonb not null default '
 
 -- ============ 공부 랭킹 ============
 -- 학원 설정 settings.rank: 'mask'(기본, 이름 가운데 가림) / 'full'(실명) / 'off'(학생에게 숨김)
+drop function if exists study_ranking(uuid, date, date);
 create or replace function study_ranking(p_academy uuid, p_from date, p_to date)
 returns table(student_id uuid, name text, seconds bigint, is_me boolean)
 language plpgsql stable security definer set search_path = public as $$
