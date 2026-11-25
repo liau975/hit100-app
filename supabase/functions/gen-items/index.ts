@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 8000,
+        max_tokens: 16000,
         system,
         tools: [TOOL],
         tool_choice: { type: "tool", name: "save_items" },
@@ -118,7 +118,13 @@ Deno.serve(async (req) => {
     const out = await r.json();
     if (!r.ok) return j({ error: "AI 호출 실패: " + (out?.error?.message || r.status) }, 502);
     const tu = (out.content || []).find((c: { type: string }) => c.type === "tool_use");
-    const raw = tu?.input?.items || [];
+    let raw: any = tu?.input?.items ?? tu?.input ?? [];
+    if (typeof raw === "string") { try { raw = JSON.parse(raw); } catch (_) { raw = []; } }
+    if (raw && !Array.isArray(raw)) raw = Array.isArray(raw.items) ? raw.items : (raw.questions ? [raw] : []);
+    if (!raw.length) {
+      const txt = (out.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join(" ").slice(0, 200);
+      return j({ error: `AI가 결과를 못 냈어요 (stop: ${out.stop_reason || "?"}, model: ${out.model || MODEL})${txt ? " — " + txt : ""}` }, 502);
+    }
 
     const items = raw.map((it: any) => {
       const qs = (it.questions || []).map((q: any) => {
