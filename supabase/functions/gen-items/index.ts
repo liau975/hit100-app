@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
       "- 수학은 문제를 만든 뒤 직접 끝까지 풀어서 정답을 검산하고, 검산이 맞지 않으면 문제를 고친다. 수식은 일반 텍스트로 알아보기 쉽게 쓴다 (예: x^2, √3, ∫_0^1 f(x)dx).",
       "- 국어·영어 지문은 실제 시험 분량과 밀도에 맞춘다 (국어 독서 지문 1,000~1,300자, 영어 지문 120~160단어).",
       "- 해설은 2~3문장으로 짧게: 정답 근거와 가장 헷갈리는 오답 하나가 틀린 이유.",
-      "- 결과는 save_items 도구로만 낸다.",
+      "- 결과는 반드시 save_items 도구를 호출해서 낸다. 도구를 쓸 수 없으면 같은 구조의 JSON 객체 {\"items\": [...]} 하나만 출력한다 (설명·코드블록 없이).",
     ].join("\n");
 
     const user_msg = [
@@ -111,14 +111,19 @@ Deno.serve(async (req) => {
         max_tokens: 9000,
         system,
         tools: [TOOL],
-        tool_choice: { type: "tool", name: "save_items" },
+        tool_choice: { type: "auto" },
         messages: [{ role: "user", content: user_msg }],
       }),
     });
     const out = await r.json();
     if (!r.ok) return j({ error: "AI 호출 실패: " + (out?.error?.message || r.status) }, 502);
     const tu = (out.content || []).find((c: { type: string }) => c.type === "tool_use");
-    let raw: any = tu?.input?.items ?? tu?.input ?? [];
+    let raw: any = tu?.input?.items ?? tu?.input;
+    if (!raw) {
+      const txt = (out.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+      const a = txt.indexOf("{"), b = txt.lastIndexOf("}");
+      if (a >= 0 && b > a) { try { raw = JSON.parse(txt.slice(a, b + 1)); } catch (_) { raw = []; } } else raw = [];
+    }
     if (typeof raw === "string") { try { raw = JSON.parse(raw); } catch (_) { raw = []; } }
     if (raw && !Array.isArray(raw)) raw = Array.isArray(raw.items) ? raw.items : (raw.questions ? [raw] : []);
     if (!raw.length) {
