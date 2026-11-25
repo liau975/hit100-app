@@ -953,7 +953,7 @@ const typeMatch = (a, b) => a === b || a.startsWith(b + '>') || b.startsWith(a +
 function usedBy(sid) { const u = new Set(); (S.worksheets || []).filter(w => (w.student_ids || []).includes(sid)).forEach(w => (w.items || []).forEach(i => u.add(i))); return u; }
 function recItems(subj, type, sid) {
   const used = sid ? usedBy(sid) : new Set();
-  return (S.items || []).filter(i => i.subject === subj && i.type && typeMatch(i.type, type)).sort((a, b) => (used.has(a.id) - used.has(b.id)) || (i => ({상: 0, 중: 1, 하: 2})[i.level] ?? 3)(a) - (i => ({상: 0, 중: 1, 하: 2})[i.level] ?? 3)(b));
+  return (S.items || []).filter(i => i.subject === subj && i.type && typeMatch(i.type, type)).sort((a, b) => (used.has(a.id) - used.has(b.id)) || (LV_RANK[a.level] ?? 5) - (LV_RANK[b.level] ?? 5));
 }
 
 /* ---------- 문제은행 ---------- */
@@ -966,7 +966,8 @@ function thumb(it) {
   const txt = it.passage_text || ((it.questions || [])[0] || {}).text || '';
   return `<div style="height:140px;overflow:hidden;border-radius:10px;border:1px solid var(--hair);background:var(--soft);padding:10px;font-size:13px;white-space:pre-wrap;color:var(--mut)">${esc(txt.slice(0, 220)) || '(내용 없음)'}</div>`;
 }
-const LV_ORDER = ['상', '중', '하'];
+const LV_ORDER = ['최상', '상', '중', '하', '최하'];
+const LV_RANK = {최상: 0, 상: 1, 중: 2, 하: 3, 최하: 4};
 function vBank() {
   const tab = S.tab || 'items';
   const tabs = `<div class="tabs">${[['items', '문제'], ['sheets', '시험지']].map(([k, l]) => `<button class="tab ${tab === k ? 'on' : ''}" data-act="tab" data-v="${k}">${l}</button>`).join('')}</div>`;
@@ -1054,7 +1055,7 @@ function aiForm(o = {}, lead = '') {
   modal(`<h2 style="margin:0">✨ AI로 문제 만들기</h2>${lead ? `<p style="margin:0">${esc(lead)}</p>` : ''}
   <p class="small" style="margin:0">수능·모의고사 형식의 새 문제를 만들어요. 저장하기 전에 확인하고 고를 수 있어요.</p>
   <div class="fields"><label>과목<select id="ai-sub">${Object.entries(SUBJECTS).map(([k, l]) => `<option value="${k}" ${subj === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-  <label>난이도<select id="ai-lv">${LV_ORDER.map(l => `<option value="${l}" ${lvl === l ? 'selected' : ''}>${({상: '상 (킬러)', 중: '중', 하: '하'})[l]}</option>`).join('')}</select></label></div>
+  <label>난이도<select id="ai-lv">${LV_ORDER.map(l => `<option value="${l}" ${lvl === l ? 'selected' : ''}>${({최상: '최상 (킬러)', 상: '상 (고난도)', 중: '중', 하: '하', 최하: '최하 (기본 개념)'})[l]}</option>`).join('')}</select></label></div>
   <label id="ai-subname-w" style="${subj === 'inq' || subj === 'etc' ? '' : 'display:none'}">과목명<input id="ai-subname" placeholder="예: 생활과 윤리, 물리학Ⅰ" value="${esc(o.subname || '')}"></label>
   <label>유형${o.types && o.types.length > 1 ? ' <span class="small">(학생 약점: ' + o.types.slice(0, 4).map(esc).join(', ') + ')</span>' : ''}<input id="ai-type" list="taxo-${subj}" value="${esc(o.type || S.f.btype || '')}" placeholder="예: 독서>과학, 빈칸 추론, 수열"></label>
   <div class="fields"><label>형태<select id="ai-kind">${setOk(subj) ? `<option value="set" ${subj === 'kor' || subj === 'eng' ? 'selected' : ''}>지문 세트 (지문 + 여러 문항)</option>` : ''}<option value="single" ${subj === 'kor' || subj === 'eng' ? '' : 'selected'}>단일 문항</option></select></label>

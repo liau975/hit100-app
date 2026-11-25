@@ -50,7 +50,7 @@ const TOOL = {
           type: "object",
           properties: {
             type: { type: "string", description: "유형 (요청받은 유형 그대로)" },
-            level: { type: "string", enum: ["상", "중", "하"] },
+            level: { type: "string" },
             passage: { type: "string", description: "지문 세트일 때 지문 전체. 단일 문항이면 빈 문자열" },
             questions: {
               type: "array",
@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
     const subject = String(b.subject || "kor");
     const subname = String(b.subname || "").slice(0, 40);
     const type = String(b.type || "").slice(0, 60);
-    const level = ["상", "중", "하"].includes(b.level) ? b.level : "중";
+    const level = ["최상", "상", "중", "하", "최하"].includes(b.level) ? b.level : "중";
     const isSet = b.kind === "set";
     const count = Math.max(1, Math.min(isSet ? 1 : 5, Number(b.count) || 1));
     const perSet = Math.max(2, Math.min(5, Number(b.perSet) || 3));
@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
 
     const subjName = SUBJ[subject] + (subname ? ` (${subname})` : "");
     const LV: Record<string, Record<string, string>> = {
-      상: {
+      최상: {
         math: "킬러 문항. 수능 공통 22번·선택 30번급(예상 정답률 5% 이하). (가)(나)(다) 조건을 모두 결합해야 미지 함수나 수열이 결정되고, 그래프 개형 추론·여러 경우 나누기·숨은 조건 발견이 필수다. 대부분의 상위권 학생도 시간 안에 못 풀 정도여야 하고, 정답은 단답형 자연수로 한다. 4점 일반 문항 수준이면 실패작이다.",
         kor: "킬러 문항. 수능 국어 오답률 1~3위급(예상 정답률 10~25%). 독서는 지문의 원리를 낯선 <보기> 사례에 여러 단계로 적용하거나 두 이론을 교차 비교해야 하고, 문학은 <보기> 관점과 구절 해석을 정밀하게 결합해야 한다. 선지 다섯 개가 모두 그럴듯하고 정답과 매력적 오답의 차이가 한두 단어여야 한다.",
         eng: "킬러 문항. 수능 영어 빈칸 33·34번, 순서·삽입 36~39번 최고난도급(예상 정답률 15~30%). 추상적·철학적·학술적 지문, 긴 수식어와 복잡한 구문, 정답과 거의 같은 매력적 오답을 넣는다.",
@@ -113,8 +113,15 @@ Deno.serve(async (req) => {
         inq: "탐구 킬러 문항. 해당 과목 수능 오답률 1위급(예상 정답률 15% 이하): 자료·그래프 해석과 여러 개념의 결합, 계산형이면 다단계 추론.",
         _: "킬러 문항(예상 정답률 15% 이하). 여러 개념을 결합한 다단계 추론이 필요해야 한다.",
       },
+      상: {
+        math: "수능 4점 고난도(15·21·28·29번급, 예상 정답률 15~35%). 두 개 이상의 조건을 결합하고 그래프 개형 추론이나 경우 나누기가 필요하다. 공식 한 번 대입으로 풀리면 안 된다.",
+        kor: "수능 고난도(예상 정답률 30~50%). <보기> 적용이나 개념 간 비교·추론이 필요하고, 선지 차이가 미세하다.",
+        eng: "수능 빈칸·순서·삽입 고난도(예상 정답률 30~50%). 추상적 지문과 매력적 오답.",
+        _: "수능 고난도(예상 정답률 30~50%). 여러 단계의 추론이 필요하다.",
+      },
       중: { _: "수능 3점~쉬운 4점 수준(예상 정답률 50~75%). 한두 단계의 추론이 필요하다." },
-      하: { _: "수능 2점 수준(예상 정답률 80% 이상). 기본 개념 확인." },
+      하: { _: "수능 2~3점 수준(예상 정답률 75~90%). 핵심 개념을 바로 적용하면 풀린다." },
+      최하: { _: "기본 개념 확인 수준(예상 정답률 90% 이상). 개념 정의나 단순 계산·사실 확인." },
     };
     const lvDesc = (LV[level][subject] || LV[level]._) as string;
     const what = isSet && b.passage
@@ -142,7 +149,7 @@ Deno.serve(async (req) => {
       `과목: ${subjName}`,
       `유형: ${type || "(자유)"}`,
       `난이도: ${level} — ${lvDesc}`,
-      level === "상" ? "※ 난이도 '상' = 킬러 문항이다. 반드시 지켜라. 일반 고난도나 쉬운 문제를 내면 요청 위반이다." : "",
+      level === "최상" ? "※ 난이도 '최상' = 킬러 문항이다. 반드시 지켜라. 일반 고난도나 쉬운 문제를 내면 요청 위반이다." : "",
       `만들 것: ${what}`,
       note ? `선생님 요청: ${note}` : "",
       avoid.length ? `이미 문제은행에 있는 소재 (같은 소재·제재·작품·상황을 다시 쓰지 말고 전혀 다른 것으로):\n- ${avoid.join("\n- ")}` : "",
