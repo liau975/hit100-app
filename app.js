@@ -23,6 +23,9 @@ async function copyText(txt) {
   ta.remove();
 }
 const IC = {
+  trophy: '<path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>',
+  chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+  heart: '<path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 0 0-7.1 7.1L12 21.5l8.8-8.8a5 5 0 0 0 0-7.1z"/>',
   home: '<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
   users: '<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="M16 4a4 4 0 0 1 0 8M22 21c0-3-2-5-4-5.5"/>',
   file: '<path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h8M9 17h6"/>',
@@ -187,6 +190,8 @@ const IDB = {db: null,
   set(k, v) { if (!this.db) return; try { this.db.transaction('kv', 'readwrite').objectStore('kv').put(JSON.parse(JSON.stringify(v)), k); } catch (e) { toast('저장하지 못했어요: ' + e.message); } }
 };
 const LB = {
+  async ranking() { return []; },
+  async posts() { throw '데모 모드에선 게시판을 쓸 수 없어요. 서버를 연결하세요.'; },
   async genItems() { throw '데모 모드에선 AI 문제 만들기를 쓸 수 없어요. 서버를 연결하세요.'; },
   db() { if (memDb) return memDb; try { memDb = JSON.parse(localStorage.getItem('mc2-db') || 'null'); } catch (e) {} memDb = memDb || {users: [], session: null, academies: [], members: [], students: [], exams: [], attempts: []}; memDb.items = memDb.items || []; memDb.worksheets = memDb.worksheets || []; memDb.logs = memDb.logs || []; memDb.todos = memDb.todos || []; return memDb; },
   save() { if (IDB.db) { IDB.set('db', memDb); try { localStorage.removeItem('mc2-db'); } catch (e) {} return; } try { localStorage.setItem('mc2-db', JSON.stringify(memDb)); } catch (e) { toast('기기 저장 공간이 부족해요. 서버 연결을 권장해요'); } },
@@ -259,6 +264,15 @@ const SB = {
     }
     return items;
   },
+  async ranking(aid, from, to) { return this.chk(await sb.rpc('study_ranking', {p_academy: aid, p_from: from, p_to: to})) || []; },
+  async posts(aid) { return this.chk(await sb.from('posts_v').select('*').eq('academy_id', aid).order('created_at', {ascending: false}).limit(200)); },
+  async post(id) { return this.chk(await sb.from('posts_v').select('*').eq('id', id).maybeSingle()); },
+  async comments(pid) { return this.chk(await sb.from('comments_v').select('*').eq('post_id', pid).order('created_at')); },
+  async addPost(p) { return this.chk(await sb.from('posts').insert(p).select('id').single()); },
+  async addComment(c) { this.chk(await sb.from('comments').insert(c)); },
+  async delPost(id) { this.chk(await sb.from('posts').delete().eq('id', id)); },
+  async delComment(id) { this.chk(await sb.from('comments').delete().eq('id', id)); },
+  async like(pid, on) { if (on) this.chk(await sb.from('post_likes').insert({post_id: pid})); else this.chk(await sb.from('post_likes').delete().eq('post_id', pid).eq('user_id', S.user.id)); },
   async genRaw(body) {
     const {data, error} = await sb.functions.invoke('gen-items', {body});
     if (error) { let m = error.message || String(error); try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (e) {}
@@ -460,10 +474,10 @@ function renderOnboard(adding) {
 }
 
 /* ---------- 라우팅 / 셸 ---------- */
-const NAV = [['home', '홈', 'home'], ['students', '학생', 'users'], ['exams', '시험', 'file'], ['grade', '채점', 'pen'], ['bank', '문제은행', 'box'], ['settings', '설정', 'gear']];
-const STUDENT_NAV = [['today', '오늘', 'home'], ['planner', '플래너', 'cal'], ['analysis', '내 분석', 'chart'], ['settings', '설정', 'gear']];
-const TITLES = {today: '오늘', planner: '플래너', analysis: '내 분석', home: '홈', students: '학생', student: '학생', exams: '시험', exam: '시험', examEdit: '시험', grade: '채점', report: '보고서', settings: '설정', bank: '문제은행', itemEdit: '문제은행', sheet: '시험지', sheetView: '시험지', aiReview: '문제은행'};
-const navOf = v => ({analysis: 'analysis', student: isStudent() ? 'analysis' : 'students', exam: 'exams', examEdit: 'exams', report: 'students', itemEdit: 'bank', sheet: 'bank', sheetView: 'bank', aiReview: 'bank'}[v] || v);
+const NAV = [['home', '홈', 'home'], ['students', '학생', 'users'], ['exams', '시험', 'file'], ['grade', '채점', 'pen'], ['bank', '문제은행', 'box'], ['board', '게시판', 'chat'], ['settings', '설정', 'gear']];
+const STUDENT_NAV = [['today', '오늘', 'home'], ['planner', '플래너', 'cal'], ['rank', '랭킹', 'trophy'], ['board', '게시판', 'chat'], ['analysis', '내 분석', 'chart'], ['settings', '설정', 'gear']];
+const TITLES = {today: '오늘', planner: '플래너', analysis: '내 분석', home: '홈', students: '학생', student: '학생', exams: '시험', exam: '시험', examEdit: '시험', grade: '채점', report: '보고서', settings: '설정', bank: '문제은행', itemEdit: '문제은행', sheet: '시험지', sheetView: '시험지', aiReview: '문제은행', rank: '공부 랭킹', board: '게시판', post: '게시판'};
+const navOf = v => ({analysis: 'analysis', student: isStudent() ? 'analysis' : 'students', exam: 'exams', examEdit: 'exams', report: 'students', itemEdit: 'bank', sheet: 'bank', sheetView: 'bank', aiReview: 'bank', post: 'board', rank: isStudent() ? 'rank' : 'home'}[v] || v);
 function go(view, p = null, tab = null) {
   if (view === 'grade' && !(p && p.keep)) S.g = p && p.g ? p.g : (S.g && !p ? S.g : newDraft(p || {}));
   S.menu = false; S.view = view; S.p = p; S.tab = tab; render(); window.scrollTo(0, 0);
@@ -514,7 +528,7 @@ function userMenu() {
 function render() {
   const nv = navOf(S.view), NAVS = isStudent() ? STUDENT_NAV : NAV;
   if (isStudent() && !['today', 'planner', 'analysis', 'settings', 'report', 'sheetView'].includes(S.view)) S.view = 'today';
-  const body = ({today: vToday, planner: vPlanner, analysis: vAnalysis, home: vHome, students: vStudents, student: vStudent, exams: vExams, exam: vExam, examEdit: vExamEdit, grade: vGrade, report: vReport, settings: vSettings, bank: vBank, itemEdit: vItemEdit, sheet: vSheet, sheetView: vSheetView, aiReview: vAiReview}[S.view] || vHome)();
+  const body = ({today: vToday, planner: vPlanner, analysis: vAnalysis, home: vHome, students: vStudents, student: vStudent, exams: vExams, exam: vExam, examEdit: vExamEdit, grade: vGrade, report: vReport, settings: vSettings, bank: vBank, itemEdit: vItemEdit, sheet: vSheet, sheetView: vSheetView, aiReview: vAiReview, rank: vRank, board: vBoard, post: vPost}[S.view] || vHome)();
   root.innerHTML = `<div class="app">
   <aside class="side"><div class="brand"><img src="icon-192.png" alt=""><div><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>${esc(S.academy.name)}</span></div></div>
   ${NAVS.map(([k, l, i]) => `<button class="nav ${nv === k ? 'on' : ''}" data-act="nav" data-v="${k}">${icon(i)}${l}</button>`).join('')}
@@ -556,6 +570,7 @@ function vHome() {
   <div class="kpi"><span class="ic y">${icon('cal')}</span><div><span class="small">예정된 시험</span><b>${planned.length}</b></div></div>
   <div class="kpi"><span class="ic g">${icon('check')}</span><div><span class="small">이번 달 채점</span><b>${mDone.length}</b></div></div>
   <div class="kpi"><span class="ic b">${icon('file')}</span><div><span class="small">등록된 시험</span><b>${S.exams.length}</b></div></div></div>
+  ${DEMO ? '' : homeRankCard()}
   ${watch.length ? `<h2>관심 필요 학생 <span class="small">직전 시험보다 5점 이상 떨어졌어요</span></h2><div class="cards">${watch.map(w => `<button class="item" data-act="openStudent" data-id="${w.s.id}"><span class="kpi ic" style="width:38px;height:38px;border:0;box-shadow:none;padding:0;display:grid;place-items:center;background:var(--redt);color:var(--red);border-radius:12px">${icon('alert', 18)}</span><span class="grow"><b>${esc(w.s.name)}</b><br><span class="small">${SUBJECTS[w.sub]} ${w.p.score}점 → ${w.l.score}점</span></span><span class="tag r">${w.l.score - w.p.score}</span></button>`).join('')}</div>` : ''}
   <h2>예정된 시험</h2>${planned.length ? `<div class="list">${planned.map(a => attItem(a, true)).join('')}</div>` : '<div class="empty">예정된 시험이 없어요. 학생 페이지에서 시험을 배정하세요.</div>'}
   <h2>최근 채점</h2>${recent.length ? `<div class="list">${recent.map(a => attItem(a, true)).join('')}</div>` : '<div class="empty">아직 채점 기록이 없어요.</div>'}`;
@@ -1048,6 +1063,88 @@ function bulkForm() {
     closeModal(); toast(`${n}개 올렸어요. 정답은 각 문제의 수정에서 넣을 수 있어요`); S.f.bsub = sub; render();
   };
 }
+/* ---------- 공부 랭킹 ---------- */
+const acSet = () => (S.academy && S.academy.settings) || {};
+function rankRange(k) {
+  const t = today(), d = new Date(t);
+  if (k === 'week') { const w = (d.getDay() + 6) % 7; d.setDate(d.getDate() - w); return [dayStr(d), t]; }
+  if (k === 'month') return [t.slice(0, 8) + '01', t];
+  return [t, t];
+}
+function loadOnce(key, fn, done) {
+  if (S._lk === key) return S._ld; S._lk = key; S._ld = null;
+  fn().then(d => { if (S._lk === key) { S._ld = d; done && done(d); render(); } }).catch(e => { if (S._lk === key) { S._ld = {error: String(e)}; render(); } });
+  return null;
+}
+function rankList(rows, limit) {
+  const medal = ['🥇', '🥈', '🥉'];
+  return `<div class="list">${rows.slice(0, limit || 100).map((r, i) => `<div class="item" style="cursor:default;${r.is_me ? 'border-color:var(--red);background:var(--redt)' : ''}"><span style="width:34px;text-align:center;font-size:${i < 3 ? 22 : 15}px;font-weight:700">${medal[i] || i + 1}</span><span class="grow"><b>${esc(r.name)}${r.is_me ? ' (나)' : ''}</b></span><b style="font-variant-numeric:tabular-nums">${fmtHM(r.seconds)}</b></div>`).join('')}</div>`;
+}
+function vRank() {
+  const k = S.tab || 'week', [from, to] = rankRange(k), off = acSet().rank === 'off' && isStudent();
+  const tabs = `<div class="tabs">${[['day', '오늘'], ['week', '이번 주'], ['month', '이번 달']].map(([v, l]) => `<button class="tab ${k === v ? 'on' : ''}" data-act="tab" data-v="${v}">${l}</button>`).join('')}</div>`;
+  const head = `<div class="top"><div><h1>${icon('trophy', 26)} 공부 랭킹</h1><div class="small">${esc(S.academy.name)} 학생들의 타이머 공부 시간 순위예요.${isStudent() && acSet().rank !== 'full' ? ' 다른 학생 이름은 가운데가 가려져요.' : ''}</div></div></div>${tabs}`;
+  if (off) return head + '<div class="empty">선생님이 랭킹을 꺼두셨어요.</div>';
+  const d = loadOnce('rank|' + k + '|' + to, () => API.ranking(S.academy.id, from, to));
+  if (!d) return head + '<div class="empty">불러오는 중…</div>';
+  if (d.error) return head + `<div class="empty">랭킹을 불러오지 못했어요.<br><span class="small">${esc(d.error)}</span></div>`;
+  if (!d.length) return head + '<div class="empty">아직 기록이 없어요. 오늘 탭의 타이머로 공부를 시작해보세요!</div>';
+  const me = d.findIndex(r => r.is_me);
+  return head + (me >= 0 ? `<div class="hero" style="margin-bottom:14px"><div><p>내 순위</p><div style="font-size:44px;font-weight:700">${me + 1}위 <span style="font-size:18px;opacity:.9">/ ${d.length}명</span></div></div><div style="text-align:right"><p>${k === 'day' ? '오늘' : k === 'week' ? '이번 주' : '이번 달'} 공부</p><div style="font-size:28px;font-weight:700">${fmtHM(d[me].seconds)}</div>${me > 0 ? `<div class="small" style="color:#fff;opacity:.9">${me}위까지 ${fmtHM(d[me - 1].seconds - d[me].seconds)} 남았어요</div>` : '<div class="small" style="color:#fff">1등이에요! 🎉</div>'}</div></div>` : '') + rankList(d);
+}
+function homeRankCard() {
+  const [from, to] = rankRange('week'), key = 'hrank|' + to;
+  if (S._hrk !== key) { S._hrk = key; S._hr = null; API.ranking(S.academy.id, from, to).then(d => { S._hr = d; if (S.view === 'home') render(); }).catch(() => { S._hr = []; }); }
+  const d = S._hr;
+  return `<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${icon('trophy', 18)} 이번 주 공부 랭킹</h3><button class="btn o s" data-act="nav" data-v="rank">전체 보기</button></div><div style="margin-top:10px">${!d ? '<p class="small">불러오는 중…</p>' : d.length ? rankList(d, 5) : '<p class="small">이번 주 타이머 기록이 아직 없어요.</p>'}</div></div>`;
+}
+
+/* ---------- 게시판 ---------- */
+const BOARD_CATS = ['자유', '질문', '정보', '공지'];
+function ago(t) { const s = (Date.now() - new Date(t)) / 1000; if (s < 60) return '방금'; if (s < 3600) return Math.floor(s / 60) + '분 전'; if (s < 86400) return Math.floor(s / 3600) + '시간 전'; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}`; }
+const who = (x, op) => x.author_name ? esc(x.author_name) + (x.anon ? ' <span class="small">(익명 글)</span>' : '') : (op ? '익명(글쓴이)' : '익명');
+function vBoard() {
+  const cat = S.f.bcat || '', off = acSet().board === 'off';
+  const head = `<div class="top"><div><h1>${icon('chat', 26)} 게시판</h1><div class="small">${esc(S.academy.name)} 학생·선생님만 보는 공간이에요. 익명 글도 선생님은 작성자를 볼 수 있어요.</div></div>${off ? '' : `<button class="btn r" data-act="postNew">${icon('plus', 18)}글쓰기</button>`}</div>
+  <div class="seg" style="margin-bottom:12px">${[['', '전체'], ...BOARD_CATS.map(c => [c, c]), ['hot', '🔥 인기']].map(([k, l]) => `<button class="${cat === k ? 'on' : ''}" data-act="bcat" data-v="${k}">${l}</button>`).join('')}</div>`;
+  if (off) return head + '<div class="empty">게시판이 꺼져 있어요.</div>';
+  const d = loadOnce('board|' + S.academy.id + '|' + (S._bv || 0), () => API.posts(S.academy.id));
+  if (!d) return head + '<div class="empty">불러오는 중…</div>';
+  if (d.error) return head + `<div class="empty">게시판을 불러오지 못했어요.<br><span class="small">${esc(d.error)}</span></div>`;
+  let list = cat === 'hot' ? d.filter(p => p.likes >= 3).sort((a, b) => b.likes - a.likes) : d.filter(p => !cat || p.category === cat);
+  if (!cat) list = [...list.filter(p => p.category === '공지'), ...list.filter(p => p.category !== '공지')];
+  if (!list.length) return head + '<div class="empty">아직 글이 없어요. 첫 글을 남겨보세요!</div>';
+  return head + `<div class="list">${list.map(p => `<button class="item" data-act="openPost" data-id="${p.id}" style="align-items:flex-start"><span class="grow"><span class="row" style="gap:6px"><span class="tag ${p.category === '공지' ? 'r' : p.category === '질문' ? 'b' : ''}">${esc(p.category)}</span><b>${esc(p.title)}</b></span><span class="small" style="display:block;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(String(p.body || '').slice(0, 90))}</span>
+    <span class="small" style="display:flex;gap:10px;margin-top:6px">${who(p)} · ${ago(p.created_at)}<span style="color:var(--red)">♥ ${p.likes}</span><span>💬 ${p.ncomments}</span></span></span></button>`).join('')}</div>`;
+}
+function vPost() {
+  const id = S.p, key = 'post|' + id + '|' + (S._bv || 0);
+  const d = loadOnce(key, async () => ({post: await API.post(id), comments: await API.comments(id)}));
+  const back = `<div class="top"><div><button class="btn o s" data-act="nav" data-v="board">← 게시판</button></div></div>`;
+  if (!d) return back + '<div class="empty">불러오는 중…</div>';
+  if (d.error || !d.post) return back + `<div class="empty">글을 찾을 수 없어요.${d.error ? `<br><span class="small">${esc(d.error)}</span>` : ''}</div>`;
+  const p = d.post, staff = !isStudent();
+  return back + `<div class="card"><div class="row" style="gap:6px"><span class="tag ${p.category === '공지' ? 'r' : ''}">${esc(p.category)}</span><span class="small">${who(p)} · ${ago(p.created_at)}</span></div>
+  <h2 style="margin:10px 0">${esc(p.title)}</h2><div style="white-space:pre-wrap;line-height:1.7">${esc(p.body)}</div>
+  <div class="row" style="margin-top:14px"><button class="btn ${p.liked ? 'r' : 'o'} s" data-act="postLike" data-id="${p.id}" data-v="${p.liked ? 0 : 1}">${icon('heart', 16)} 공감 ${p.likes}</button>${p.mine || staff ? `<button class="btn o s" data-act="postDel" data-id="${p.id}">삭제</button>` : ''}</div></div>
+  <h2>댓글 ${d.comments.length}</h2><div class="list">${d.comments.map(c => `<div class="card" style="padding:12px"><div class="small">${who(c, c.is_op)} · ${ago(c.created_at)}${c.mine || staff ? ` · <button class="linkbtn" data-act="cmtDel" data-id="${c.id}">삭제</button>` : ''}</div><div style="white-space:pre-wrap;margin-top:4px">${esc(c.body)}</div></div>`).join('') || '<p class="small">첫 댓글을 남겨보세요.</p>'}</div>
+  <div class="card" style="margin-top:10px"><textarea id="cm-body" placeholder="댓글을 입력하세요" maxlength="1000"></textarea><div class="row" style="margin-top:8px;justify-content:space-between"><label class="row" style="gap:6px;color:var(--ink)"><input type="checkbox" id="cm-anon" checked style="width:auto;min-height:0"> 익명</label><button class="btn r s" data-act="cmtAdd" data-id="${p.id}">등록</button></div></div>`;
+}
+function postForm() {
+  const cats = BOARD_CATS.filter(c => c !== '공지' || !isStudent());
+  modal(`<h2 style="margin:0">글쓰기</h2><label>분류<select id="pf-cat">${cats.map(c => `<option>${c}</option>`).join('')}</select></label>
+  <label>제목<input id="pf-title" maxlength="100"></label><label>내용<textarea id="pf-body" maxlength="5000" style="min-height:160px"></textarea></label>
+  <label class="row" style="gap:6px;color:var(--ink)"><input type="checkbox" id="pf-anon" checked style="width:auto;min-height:0"> 익명으로 쓰기 <span class="small">(학생끼리는 이름이 안 보이고, 선생님은 볼 수 있어요)</span></label>
+  <div class="row"><button class="btn r" id="pf-go">등록</button><button class="btn o" data-act="closeModal">취소</button></div><p class="small" id="pf-msg" style="margin:0"></p>`);
+  document.getElementById('pf-go').onclick = async () => {
+    const title = document.getElementById('pf-title').value.trim(), body = document.getElementById('pf-body').value.trim();
+    if (!title) { document.getElementById('pf-msg').textContent = '제목을 입력하세요.'; return; }
+    try { const r = await API.addPost({academy_id: S.academy.id, category: document.getElementById('pf-cat').value, title, body, anon: document.getElementById('pf-anon').checked}); closeModal(); S._bv = (S._bv || 0) + 1; toast('등록했어요'); go('post', r.id); }
+    catch (e) { document.getElementById('pf-msg').textContent = '실패: ' + e; }
+  };
+}
+const boardRefresh = () => { S._bv = (S._bv || 0) + 1; S._lk = null; render(); };
+
 /* ---------- AI 문제 만들기 ---------- */
 function aiForm(o = {}, lead = '') {
   const subj = o.subject || S.f.bsub || 'kor', lvl = o.level || '중';
@@ -1269,6 +1366,10 @@ function vSettings() {
   <label style="margin-top:8px">새 비밀번호 확인<span class="pwbox"><input id="st-new2" type="password" autocomplete="new-password"><button type="button" class="pweye" data-act="pwEye">보기</button></span></label>
   <div class="row" style="margin-top:10px"><button class="btn r s" data-act="changePw">변경</button></div></div>
 
+  ${!DEMO ? `<div class="card staff-only"><h3>${icon('chat', 18)} 학생 커뮤니티</h3>
+  <div class="fields"><label>공부 랭킹<select data-in="community" data-k="rank" ${isOwner() ? '' : 'disabled'}>${[['mask', '켜기 · 이름 가운데 가림 (김*수)'], ['full', '켜기 · 실명'], ['off', '끄기 (학생에게 숨김)']].map(([v, l]) => `<option value="${v}" ${(acSet().rank || 'mask') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+  <label>게시판<select data-in="community" data-k="board" ${isOwner() ? '' : 'disabled'}>${[['on', '켜기'], ['off', '끄기']].map(([v, l]) => `<option value="${v}" ${(acSet().board || 'on') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+  <p class="small" style="margin-bottom:0">${isOwner() ? '게시판의 익명 글도 선생님은 작성자를 볼 수 있고, 어떤 글이든 삭제할 수 있어요.' : '관리자만 바꿀 수 있어요.'}</p></div>` : ''}
   <div class="card staff-only"><h3>${icon('home', 18)} 학원</h3>
   <label>학원 이름 <span class="small">(보고서 하단에 표시돼요)</span><input id="st-acad" value="${esc(S.academy.name)}" ${canAcad ? '' : 'disabled'}></label>
   ${canAcad ? '<div class="row" style="margin-top:10px"><button class="btn r s" data-act="saveAcademy">학원 이름 저장</button></div>' : '<p class="small">학원 이름을 바꿀 권한이 없어요.</p>'}
@@ -1298,7 +1399,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.4 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.5 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
@@ -1399,6 +1500,13 @@ const ACT = {
   cartToggle: el => { const id = el.dataset.id; S.cart = S.cart.includes(id) ? S.cart.filter(x => x !== id) : [...S.cart, id]; saveCart(); render(); },
   openCart: () => { S.ws = sheetDraft(null); go('sheet'); },
   bulkAdd: () => bulkForm(),
+  bcat: el => { S.f.bcat = el.dataset.v; render(); },
+  postNew: () => postForm(),
+  openPost: el => go('post', el.dataset.id),
+  postLike: async el => { try { await API.like(el.dataset.id, el.dataset.v === '1'); boardRefresh(); } catch (e) { toast('실패: ' + e); } },
+  postDel: el => confirmBox('이 글을 삭제할까요?', async () => { try { await API.delPost(el.dataset.id); S._bv = (S._bv || 0) + 1; toast('삭제했어요'); go('board'); } catch (e) { toast('실패: ' + e); } }),
+  cmtAdd: async el => { const b = document.getElementById('cm-body').value.trim(); if (!b) return; try { await API.addComment({post_id: el.dataset.id, academy_id: S.academy.id, body: b, anon: document.getElementById('cm-anon').checked}); boardRefresh(); } catch (e) { toast('실패: ' + e); } },
+  cmtDel: el => confirmBox('이 댓글을 삭제할까요?', async () => { try { await API.delComment(el.dataset.id); boardRefresh(); } catch (e) { toast('실패: ' + e); } }),
   aiGen: () => aiForm(S.aiLast || {}),
   aiSave: async () => { const ids = await aiSaveSel(); toast(`${ids.length}개를 문제은행에 저장했어요`); if (!(S.aiRes || []).length) go('bank'); else render(); },
   aiSaveCart: async () => { const ids = await aiSaveSel(); const sid = S.aiFor; toast(`${ids.length}개 저장`);
@@ -1451,6 +1559,7 @@ const IN = {
   it: el => { S.it[el.dataset.k] = el.value; if (el.dataset.k === 'subject') render(); },
   itPText: el => { S.it.passage_text = el.value; },
   itQ: el => { S.it.questions[+el.dataset.i][el.dataset.k] = el.value; },
+  community: async el => { const st = {...acSet(), [el.dataset.k]: el.value}; try { const a = await API.updateAcademy({...S.academy, settings: st}); S.academy = {...S.academy, ...a, settings: st}; syncMyAcads(); S._lk = null; S._hrk = null; toast('저장했어요'); render(); } catch (e) { toast('저장 실패: ' + e); } },
   aiPick: el => { const p = S.aiPick || (S.aiPick = new Set()); el.checked ? p.add(el.dataset.id) : p.delete(el.dataset.id); render(); },
   ws: el => { const k = el.dataset.k; S.ws[k] = k === 'cols' ? +el.value : k === 'with_answers' ? el.value === '1' : el.value; },
   wsStu: el => { if (el.value) { S.ws.student_ids.push(el.value); render(); } },
