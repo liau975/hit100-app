@@ -1138,7 +1138,7 @@ function schoolCard() {
 function schoolPendingCard() {
   const pend = (S.members || []).filter(m => m.school_status === 'pending');
   if (!pend.length || !can('student_edit')) return '';
-  return `<div class="card"><h3>✓ 학교 인증 대기 ${pend.length}명</h3><div class="list">${pend.map(m => `<div class="row" style="gap:8px"><span style="flex:1"><b>${esc(m.name)}</b> <span class="small">${esc(m.school_name)} (${SCHOOL_KIND[m.school_kind] || ''})</span></span><button class="btn r s" data-act="scApprove" data-u="${esc(m.user_id)}" data-v="1">승인</button><button class="btn o s" data-act="scApprove" data-u="${esc(m.user_id)}" data-v="0">반려</button></div>`).join('')}</div></div>`;
+  return `<div class="card"><h3>✓ 학교 인증 대기 ${pend.length}명</h3><div class="list">${pend.map(m => `<div class="row" style="gap:8px"><span style="flex:1"><b>${esc(m.name)}</b> <span class="tag">${m.role === 'student' ? '학생' : esc(roleName(m))}</span> <span class="small">${esc(m.school_name)} (${SCHOOL_KIND[m.school_kind] || ''})</span></span>${m.user_id === S.user.id && !isOwner() ? '<span class="small">다른 선생님이 승인해요</span>' : `<button class="btn r s" data-act="scApprove" data-u="${esc(m.user_id)}" data-v="1">승인</button><button class="btn o s" data-act="scApprove" data-u="${esc(m.user_id)}" data-v="0">반려</button>`}</div>`).join('')}</div></div>`;
 }
 const updMember = m => { if (!m) return; if (m.user_id === S.user.id) S.member = {...S.member, ...m}; const i = (S.members || []).findIndex(x => x.user_id === m.user_id); if (i >= 0) S.members[i] = {...S.members[i], ...m}; };
 
@@ -1403,7 +1403,7 @@ function vSettings() {
   ${owner ? '' : '<p class="small">직책은 관리자가 바꿀 수 있어요.</p>'}
   <div class="row" style="margin-top:10px"><button class="btn r s" data-act="saveProfile">이름 저장</button></div></div>
 
-  ${isStudent() ? schoolCard() : ''}
+  ${schoolCard()}
   <div class="card"><h3>${icon('key', 18)} 비밀번호 변경</h3>
   <label>현재 비밀번호<span class="pwbox"><input id="st-old" type="password" autocomplete="current-password"><button type="button" class="pweye" data-act="pwEye">보기</button></span></label>
   <label style="margin-top:8px">새 비밀번호 (6자 이상)<span class="pwbox"><input id="st-new" type="password" autocomplete="new-password"><button type="button" class="pweye" data-act="pwEye">보기</button></span></label>

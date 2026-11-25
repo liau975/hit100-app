@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
       const domain = otp.email.split("@")[1];
       const { data: m, error } = await admin.from("members").update({
         school_kind: "univ", school_name: otp.school_name, school_code: domain, school_status: "verified",
-        school_email: otp.email, school_verified_at: new Date().toISOString(),
+        school_email: null, school_verified_at: new Date().toISOString(),
       }).eq("user_id", user.id).eq("academy_id", aid).select().single();
       if (error) return j({ error: error.message }, 500);
       await admin.from("email_otps").delete().eq("user_id", user.id).eq("academy_id", aid);
