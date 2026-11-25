@@ -74,6 +74,8 @@ Deno.serve(async (req) => {
     const perSet = Math.max(2, Math.min(5, Number(b.perSet) || 3));
     const note = String(b.note || "").slice(0, 500);
     const sample = String(b.sample || "").slice(0, 3000);
+    const avoid = (Array.isArray(b.avoid) ? b.avoid : []).map((x: unknown) => String(x).replace(/\s+/g, " ").slice(0, 80)).filter(Boolean).slice(0, 30);
+    const seed = Math.floor(Math.random() * 1e6);
 
     const subjName = SUBJ[subject] + (subname ? ` (${subname})` : "");
     const lvDesc = { 상: "정답률 50% 미만 수준의 고난도", 중: "정답률 50~80% 수준의 중간 난도", 하: "정답률 80% 이상 수준의 기본" }[level];
@@ -100,6 +102,8 @@ Deno.serve(async (req) => {
       `난이도: ${level} — ${lvDesc}`,
       `만들 것: ${what}`,
       note ? `선생님 요청: ${note}` : "",
+      avoid.length ? `이미 문제은행에 있는 소재 (같은 소재·제재·작품·상황을 다시 쓰지 말고 전혀 다른 것으로):\n- ${avoid.join("\n- ")}` : "",
+      `다양성 번호 ${seed}: 이 번호를 참고해 흔하지 않은 제재를 골라라.`,
       sample ? `참고 (학생이 틀린 문제. 이것을 베끼지 말고 같은 유형·개념을 묻는 새 문제를 만든다):\n${sample}` : "",
     ].filter(Boolean).join("\n");
 

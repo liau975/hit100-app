@@ -1056,7 +1056,9 @@ function aiForm(o = {}, lead = '') {
     const jobs = kind === 'set' ? Array.from({length: n}, () => 1) : (() => { const a = []; let r = n; while (r > 0) { a.push(Math.min(5, r)); r -= 5; } return a; })();
     let done = 0, out = [], errs = [];
     const tick = () => { $('ai-msg').textContent = `만드는 중… ${done}/${jobs.length} (한 번에 30초~1분 30초 걸려요)`; }; tick();
-    await Promise.all(jobs.map(c => API.genItems({academy_id: S.academy.id, subject: sub, subname, type, level: lv, kind, count: c, perSet: per, note})
+    const snip = it => (it.passage_text || ((it.questions || [])[0] || {}).text || '').replace(/\s+/g, ' ').slice(0, 70);
+    const avoid = [...(S.aiRes || []), ...(S.items || [])].filter(it => it.subject === sub && (!type || !it.type || typeMatch(it.type, type))).map(snip).filter(Boolean).slice(0, 25);
+    await Promise.all(jobs.map((c, ji) => API.genItems({academy_id: S.academy.id, subject: sub, subname, type, level: lv, kind, count: c, perSet: per, note: [note, jobs.length > 1 ? `(이번 요청은 ${jobs.length}개 중 ${ji + 1}번째. 다른 요청과 소재가 겹치지 않게)` : ''].filter(Boolean).join(' '), avoid})
       .then(r => { out = out.concat(r); }).catch(e => errs.push(String(e))).finally(() => { done++; tick(); })));
     if (!out.length) { btn.disabled = false; $('ai-msg').textContent = '실패: ' + (errs[0] || '결과가 없어요'); return; }
     closeModal(); S.aiRes = out.map(it => ({...it, _id: uid()})); S.aiPick = new Set(S.aiRes.map(x => x._id)); S.aiFor = o.sid || null; S.aiLast = {...o, subject: sub, type, level: lv};
