@@ -486,8 +486,8 @@ function renderOnboard(adding) {
 /* ---------- 라우팅 / 셸 ---------- */
 const NAV = [['home', '홈', 'home'], ['students', '학생', 'users'], ['exams', '시험', 'file'], ['grade', '채점', 'pen'], ['bank', '문제은행', 'box'], ['board', '게시판', 'chat'], ['settings', '설정', 'gear']];
 const STUDENT_NAV = [['today', '오늘', 'home'], ['planner', '플래너', 'cal'], ['rank', '랭킹', 'trophy'], ['board', '게시판', 'chat'], ['analysis', '내 분석', 'chart'], ['settings', '설정', 'gear']];
-const TITLES = {today: '오늘', planner: '플래너', analysis: '내 분석', home: '홈', students: '학생', student: '학생', exams: '시험', exam: '시험', examEdit: '시험', grade: '채점', report: '보고서', settings: '설정', bank: '문제은행', itemEdit: '문제은행', sheet: '시험지', sheetView: '시험지', aiReview: '문제은행', examImport: '시험', rank: '공부 랭킹', board: '게시판', post: '게시판'};
-const navOf = v => ({analysis: 'analysis', student: isStudent() ? 'analysis' : 'students', exam: 'exams', examEdit: 'exams', report: 'students', itemEdit: 'bank', sheet: 'bank', sheetView: 'bank', aiReview: 'bank', examImport: 'exams', post: 'board', rank: isStudent() ? 'rank' : 'home'}[v] || v);
+const TITLES = {today: '오늘', planner: '플래너', analysis: '내 분석', home: '홈', students: '학생', student: '학생', exams: '시험', exam: '시험', examEdit: '시험', grade: '채점', report: '보고서', settings: '설정', bank: '문제은행', itemEdit: '문제은행', sheet: '시험지', sheetView: '시험지', aiReview: '문제은행', itemView: '문제은행', examImport: '시험', rank: '공부 랭킹', board: '게시판', post: '게시판'};
+const navOf = v => ({analysis: 'analysis', student: isStudent() ? 'analysis' : 'students', exam: 'exams', examEdit: 'exams', report: 'students', itemEdit: 'bank', sheet: 'bank', sheetView: 'bank', aiReview: 'bank', itemView: 'bank', examImport: 'exams', post: 'board', rank: isStudent() ? 'rank' : 'home'}[v] || v);
 function go(view, p = null, tab = null) {
   if (view === 'grade' && !(p && p.keep)) S.g = p && p.g ? p.g : (S.g && !p ? S.g : newDraft(p || {}));
   S.menu = false; S.view = view; S.p = p; S.tab = tab; render(); window.scrollTo(0, 0);
@@ -538,7 +538,7 @@ function userMenu() {
 function render() {
   const nv = navOf(S.view), NAVS = isStudent() ? STUDENT_NAV : NAV;
   if (isStudent() && !['today', 'planner', 'analysis', 'settings', 'report', 'sheetView'].includes(S.view)) S.view = 'today';
-  const body = ({today: vToday, planner: vPlanner, analysis: vAnalysis, home: vHome, students: vStudents, student: vStudent, exams: vExams, exam: vExam, examEdit: vExamEdit, grade: vGrade, report: vReport, settings: vSettings, bank: vBank, itemEdit: vItemEdit, sheet: vSheet, sheetView: vSheetView, aiReview: vAiReview, examImport: vExamImport, rank: vRank, board: vBoard, post: vPost}[S.view] || vHome)();
+  const body = ({today: vToday, planner: vPlanner, analysis: vAnalysis, home: vHome, students: vStudents, student: vStudent, exams: vExams, exam: vExam, examEdit: vExamEdit, grade: vGrade, report: vReport, settings: vSettings, bank: vBank, itemEdit: vItemEdit, sheet: vSheet, sheetView: vSheetView, aiReview: vAiReview, itemView: vItemView, examImport: vExamImport, rank: vRank, board: vBoard, post: vPost}[S.view] || vHome)();
   root.innerHTML = `<div class="app">
   <aside class="side"><div class="brand"><img src="icon-192.png" alt=""><div><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>${esc(S.academy.name)}</span></div></div>
   ${NAVS.map(([k, l, i]) => `<button class="nav ${nv === k ? 'on' : ''}" data-act="nav" data-v="${k}">${icon(i)}${l}</button>`).join('')}
@@ -1011,10 +1011,10 @@ function vBank() {
   <div class="fields" style="margin-bottom:12px"><label>유형<input data-in="btype" list="taxo-${subj || 'kor'}" value="${esc(f.btype || '')}" placeholder="예: 독서>과학"></label>
   <label>난이도<select data-in="blv"><option value="">전체</option>${LV_ORDER.map(l => `<option ${f.blv === l ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
   <label>검색<input data-in="q" value="${esc(S.q)}" placeholder="출처·지문 내용"></label></div>
-  <p class="small">${list.length}개</p>
+  <p class="small">${list.length}개${(S._bankIds = list.map(x => x.id)) && ''}</p>
   ${list.length ? `<div class="cards">${list.map(it => { const inCart = S.cart.includes(it.id);
-    return `<div class="card" style="padding:12px;display:grid;gap:8px">${thumb(it)}<div class="row" style="gap:6px"><span class="tag b">${esc(SUBJECTS[it.subject] || '')}${it.subname ? ' ' + esc(it.subname) : ''}</span>${it.type ? `<span class="tag">${esc(it.type)}</span>` : ''}${it.level ? `<span class="lv ${it.level}">${it.level}</span>` : ''}<span class="tag">${it.kind === 'set' ? '지문 세트 · ' + itemQCount(it) + '문항' : '단일'}</span></div>
-    ${it.source ? `<span class="small">${esc(it.source)}</span>` : ''}<div class="row"><button class="btn s ${inCart ? '' : 'r'}" data-act="cartToggle" data-id="${it.id}">${inCart ? '담김 ✓' : '담기'}</button><button class="btn o s" data-act="editItem" data-id="${it.id}">수정</button><button class="btn o s" data-act="delItem" data-id="${it.id}">삭제</button></div></div>`; }).join('')}</div>`
+    return `<div class="card" style="padding:12px;display:grid;gap:8px"><button class="linkbtn" data-act="viewItem" data-id="${it.id}" style="display:block;text-align:left;text-decoration:none;cursor:zoom-in" title="크게 보기">${thumb(it)}</button><div class="row" style="gap:6px"><span class="tag b">${esc(SUBJECTS[it.subject] || '')}${it.subname ? ' ' + esc(it.subname) : ''}</span>${it.type ? `<span class="tag">${esc(it.type)}</span>` : ''}${it.level ? `<span class="lv ${it.level}">${it.level}</span>` : ''}<span class="tag">${it.kind === 'set' ? '지문 세트 · ' + itemQCount(it) + '문항' : '단일'}</span></div>
+    ${it.source ? `<span class="small">${esc(it.source)}</span>` : ''}<div class="row"><button class="btn s ${inCart ? '' : 'r'}" data-act="cartToggle" data-id="${it.id}">${inCart ? '담김 ✓' : '담기'}</button><button class="btn o s" data-act="viewItem" data-id="${it.id}">보기</button><button class="btn o s" data-act="editItem" data-id="${it.id}">수정</button><button class="btn o s" data-act="delItem" data-id="${it.id}">삭제</button></div></div>`; }).join('')}</div>`
     : `<div class="empty">${(S.items || []).length ? '조건에 맞는 문제가 없어요.' : '아직 문제가 없어요.<br><b>✨ AI로 문제 만들기</b>로 원하는 유형의 새 문제를 바로 만들거나,<br>학원 자료를 캡처해 <b>문제 추가</b>로 올리세요.'}</div>`}${taxoDatalists()}`;
 }
 /* 이미지 줄이기 (최대 폭 1400px, JPEG) */
@@ -1395,6 +1395,20 @@ function vSheetView() {
       ${answers.some(x => x[2]) ? `<h3 style="margin-top:8mm">해설</h3><div class="pexp">${answers.filter(x => x[2]).map(([k, a, e]) => `<div><b>${k}. [정답 ${esc(a || '-')}]</b> ${esc(e)}</div>`).join('')}</div>` : ''}</div>` : ''}
   </div>`;
 }
+/* 문제 크게 보기: 시험지 모양 그대로 + 정답·해설 */
+function vItemView() {
+  const it = (S.items || []).find(x => x.id === S.p); if (!it) return '<div class="empty">문제를 찾을 수 없어요.</div>';
+  const ids = S._bankIds || [], i = ids.indexOf(it.id), prev = i > 0 ? ids[i - 1] : null, next = i >= 0 && i < ids.length - 1 ? ids[i + 1] : null;
+  const qs = it.questions && it.questions.length ? it.questions : [{}], inCart = S.cart.includes(it.id), show = S.f.showAns;
+  const body = `${it.kind === 'set' ? `<div class="phead">[1${qs.length > 1 ? '～' + qs.length : ''}] 다음 글을 읽고 물음에 답하시오.</div>${it.passage_img ? `<img src="${esc(it.passage_img)}" alt="">` : ''}${it.passage_text ? passHtml(it.passage_text) : ''}` : ''}
+    ${qs.map((q, k) => `<div class="pq">${q.img ? `<b class="pn">${k + 1}.</b><img src="${esc(q.img)}" alt="">` : ''}${q.text ? qHtml(q.text, k + 1) : ''}
+      ${show ? `<div style="margin-top:2mm;padding:2mm 3mm;border-left:3px solid #d8344a;background:#fff5f6;font-size:9.5pt"><b>정답 ${esc(q.answer || '-')}</b>${q.explain ? `<div style="white-space:pre-wrap;margin-top:1mm">${esc(q.explain)}</div>` : ''}</div>` : ''}</div>`).join('')}`;
+  return `<div class="top noprint"><div><button class="btn o s" data-act="nav" data-v="bank">← 문제은행</button>
+    <div class="row" style="gap:6px;margin-top:10px"><span class="tag b">${esc(SUBJECTS[it.subject] || '')}${it.subname ? ' ' + esc(it.subname) : ''}</span>${it.type ? `<span class="tag">${esc(it.type)}</span>` : ''}${it.level ? `<span class="lv ${it.level}">${it.level}</span>` : ''}${it.source ? `<span class="small">${esc(it.source)}</span>` : ''}</div></div>
+    <div class="row"><button class="btn o s" data-act="showAns">${show ? '정답 숨기기' : '정답·해설 보기'}</button><button class="btn s ${inCart ? '' : 'r'}" data-act="cartToggle" data-id="${it.id}">${inCart ? '담김 ✓' : '담기'}</button><button class="btn o s" data-act="editItem" data-id="${it.id}">수정</button><button class="btn o s" data-act="delItem" data-id="${it.id}">삭제</button></div></div>
+  <div class="paper" style="min-height:0"><div class="pbody c1" style="margin-top:0">${body}</div></div>
+  <div class="row noprint" style="justify-content:space-between;max-width:210mm;margin:14px auto 0">${prev ? `<button class="btn o" data-act="viewItem" data-id="${prev}">← 이전 문제</button>` : '<span></span>'}${next ? `<button class="btn o" data-act="viewItem" data-id="${next}">다음 문제 →</button>` : ''}</div>`;
+}
 /* 학생 맞춤 시험지: 취약 유형별로 문제를 골라 담는다 */
 function makeClinicSheet(sid, subj) {
   const s = stuById(sid), wt = weakTypes(sid, subj).slice(0, 5), picked = [];
@@ -1550,7 +1564,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.9 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.0 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
@@ -1605,6 +1619,8 @@ const ACT = {
   esub: el => { S.f.esub = el.dataset.v; render(); },
   tsub: el => { S.f.tsub = el.dataset.v; render(); },
   impExam: () => impForm(),
+  viewItem: el => go('itemView', el.dataset.id),
+  showAns: () => { S.f.showAns = !S.f.showAns; render(); },
   impSave: async () => { const res = S.impRes || [], ids = [...(S.impPick || [])]; let n = 0;
     for (const i of ids) { const r = res[i]; if (!r || !r.exam) continue; try { await save('exams', impBuild(r)); n++; } catch (e) {} }
     toast(`${n}개 시험을 저장했어요`); S.impRes = null; go('exams'); },
@@ -1651,7 +1667,7 @@ const ACT = {
   bsub: el => { S.f.bsub = el.dataset.v; S.f.btype = ''; render(); },
   newItem: () => { S.it = itemDraft(null); S.dropKey = null; go('itemEdit'); },
   editItem: el => { S.it = itemDraft((S.items || []).find(i => i.id === el.dataset.id)); S.dropKey = null; go('itemEdit'); },
-  delItem: el => confirmBox('이 문제를 문제은행에서 삭제할까요?', async () => { await del('items', el.dataset.id); S.cart = S.cart.filter(x => x !== el.dataset.id); saveCart(); toast('삭제했어요'); render(); }),
+  delItem: el => confirmBox('이 문제를 문제은행에서 삭제할까요?', async () => { await del('items', el.dataset.id); S.cart = S.cart.filter(x => x !== el.dataset.id); saveCart(); toast('삭제했어요'); if (S.view === 'itemView') go('bank'); else render(); }),
   cartToggle: el => { const id = el.dataset.id; S.cart = S.cart.includes(id) ? S.cart.filter(x => x !== id) : [...S.cart, id]; saveCart(); render(); },
   openCart: () => { S.ws = sheetDraft(null); go('sheet'); },
   bulkAdd: () => bulkForm(),
