@@ -208,19 +208,27 @@ Deno.serve(async (req) => {
       ].filter(Boolean).join("\n\n");
     }
 
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({
-        model,
-        max_tokens: b.passage ? 10000 : 14000,
-        system,
-        tools: [TOOL],
-        tool_choice: { type: "auto" },
-        messages: [{ role: "user", content: reviewMsg ? `${user_msg}\n\n${reviewMsg}` : user_msg }],
-      }),
-    });
-    const out = await r.json();
+    // 어려운 문제(특히 수학)는 검산을 '생각(thinking)' 칸에서 하게 해서, 답변 본문이 길어져 잘리는 것을 막는다
+    const hard = level === "최상" || level === "상" || subject === "math";
+    const ask = async (m: string, think: boolean) => {
+      const rr = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({
+          model: m,
+          max_tokens: think ? 16000 : (b.passage ? 10000 : 14000),
+          ...(think ? { thinking: { type: "enabled", budget_tokens: 7000 } } : {}),
+          system: system + (think ? "\n- 풀이·검산은 생각 과정에서만 하고, 생각이 끝나면 곧바로 save_items를 호출한다. 해설은 3~5줄로 핵심만." : ""),
+          tools: [TOOL],
+          tool_choice: { type: "auto" },
+          messages: [{ role: "user", content: reviewMsg ? `${user_msg}\n\n${reviewMsg}` : user_msg }],
+        }),
+      });
+      return { r: rr, o: await rr.json() };
+    };
+    let { r, o: out } = await ask(model, hard);
+    if (r.ok && hard && out.stop_reason === "max_tokens") ({ r, o: out } = await ask(MODELS.std, true)); // 너무 길면 표준 모델로 한 번 더
+    if (!r.ok && hard && /thinking/i.test(out?.error?.message || "")) ({ r, o: out } = await ask(model, false)); // thinking 미지원 모델이면 끄고 다시
     if (!r.ok) return j({ error: "AI 호출 실패: " + (out?.error?.message || r.status) }, 502);
     const tu = (out.content || []).find((c: { type: string }) => c.type === "tool_use");
     let raw: any = tu?.input?.items ?? tu?.input;
