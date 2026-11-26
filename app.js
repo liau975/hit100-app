@@ -1345,24 +1345,54 @@ function vSheet() {
   <input data-in="wsFind" placeholder="유형·출처 검색" value="${esc(S.f.wsFind || '')}">
   <div class="list" style="margin-top:10px;max-height:60vh;overflow:auto">${(S.items || []).filter(i => !w.items.includes(i.id) && (!S.f.wsFind || [i.type, i.source, SUBJECTS[i.subject]].join(' ').includes(S.f.wsFind))).slice(0, 40).map(i => `<div class="row" style="gap:8px;border-top:1px solid var(--hair);padding-top:8px"><span style="flex:1;font-size:14px"><b>${esc(SUBJECTS[i.subject])}</b> ${esc(i.type || '')}<br><span class="small">${esc(i.source || '')}</span></span><button class="btn s r" data-act="wsAdd" data-id="${i.id}">담기</button></div>`).join('') || '<p class="small">더 담을 문제가 없어요.</p>'}</div></div></div>`;
 }
+/* 문항 본문을 시험지 모양으로: 발문 · <보기> 상자 · 선지 줄맞춤 · [3점] */
+const CH_RE = /^\s*([①②③④⑤])\s*/;
+function qHtml(text, n) {
+  const lines = String(text || '').split('\n'), stem = [], bogi = [], ch = [];
+  let mode = 'stem';
+  for (const raw of lines) {
+    const l = raw.replace(/\s+$/, '');
+    if (CH_RE.test(l)) { mode = 'ch'; ch.push(l.replace(CH_RE, '$1 ')); continue; }
+    if (mode !== 'ch' && /^\s*[<〈＜]\s*보\s*기\s*[>〉＞]\s*$/.test(l)) { mode = 'bogi'; continue; }
+    if (mode === 'ch') { if (l.trim()) ch[ch.length - 1] += ' ' + l.trim(); continue; }
+    (mode === 'bogi' ? bogi : stem).push(l);
+  }
+  const fmt = t => esc(t).replace(/\[\s*([34])\s*점\s*\]/g, '<span class="p3">[$1점]</span>');
+  const paras = arr => arr.join('\n').trim().split(/\n/).map(x => `<p>${fmt(x) || '&nbsp;'}</p>`).join('');
+  const st = stem.join('\n').trim();
+  const shortCh = ch.length === 5 && ch.every(c => c.length <= 9);
+  return `<div class="pstem"><b class="pn">${n}.</b>${fmt(st).replace(/\n/g, '<br>')}</div>`
+    + (bogi.join('').trim() ? `<div class="pbogi">${paras(bogi)}</div>` : '')
+    + (ch.length ? `<div class="pch ${shortCh ? 'row5' : ''}">${ch.map(c => `<div>${fmt(c)}</div>`).join('')}</div>` : '');
+}
+function passHtml(t) { return `<div class="ppass">${String(t).trim().split(/\n\s*\n|\n/).map(p => `<p>${esc(p.trim())}</p>`).join('')}</div>`; }
 function vSheetView() {
   const w = (S.worksheets || []).find(x => x.id === S.p) || S.ws; if (!w) return '<div class="empty">시험지를 찾을 수 없어요.</div>';
   const items = (w.items || []).map(id => (S.items || []).find(i => i.id === id)).filter(Boolean);
   let n = 0; const answers = [];
   const blocks = items.map(it => {
     const qs = it.questions && it.questions.length ? it.questions : [{}], from = n + 1;
-    const qhtml = qs.map(q => { n++; answers.push([n, q.answer || '', q.explain || '']); return `<div class="pq"><b class="pn">${n}.</b>${q.img ? `<img src="${esc(q.img)}" alt="">` : ''}${q.text ? `<div class="pt">${esc(q.text)}</div>` : ''}</div>`; }).join('');
-    if (it.kind === 'set') return `<div class="pset"><div class="phead">[${from}~${n}] 다음 글을 읽고 물음에 답하시오.</div>${it.passage_img ? `<img src="${esc(it.passage_img)}" alt="">` : ''}${it.passage_text ? `<div class="pt pbox">${esc(it.passage_text)}</div>` : ''}</div>${qhtml}`;
+    const qhtml = qs.map(q => { n++; answers.push([n, q.answer || '', q.explain || '']); return `<div class="pq">${q.img ? `<b class="pn">${n}.</b><img src="${esc(q.img)}" alt="">` : ''}${q.text ? qHtml(q.text, n) : (q.img ? '' : `<b class="pn">${n}.</b>`)}</div>`; }).join('');
+    if (it.kind === 'set') { const to = from + qs.length - 1;
+      return `<div class="pset"><div class="phead">[${from}${to > from ? '～' + to : ''}] 다음 글을 읽고 물음에 답하시오.</div>${it.passage_img ? `<img src="${esc(it.passage_img)}" alt="">` : ''}${it.passage_text ? passHtml(it.passage_text) : ''}</div>${qhtml}`; }
     return qhtml;
   }).join('');
   const names = (w.student_ids || []).map(id => (stuById(id) || {}).name).filter(Boolean);
+  const subs = [...new Set(items.map(i => i.subject))], subjName = subs.length === 1 ? (SUBJECTS[subs[0]] || '') + (items[0].subname ? ' ' + items[0].subname : '') : '종합';
+  const d = new Date(w.date || Date.now());
+  const ansTable = (() => { const rows = []; for (let i = 0; i < answers.length; i += 10) rows.push(answers.slice(i, i + 10)); return `<table>${rows.map(r => `<tr>${r.map(([k]) => `<th>${k}</th>`).join('')}${'<th></th>'.repeat(10 - r.length)}</tr><tr>${r.map(([, a]) => `<td>${esc(a || '-')}</td>`).join('')}${'<td></td>'.repeat(10 - r.length)}</tr>`).join('')}</table>`; })();
   return `<div class="top noprint"><div><button class="btn o s" data-act="nav" data-v="bank" data-tab="sheets">← 시험지 목록</button></div>
   <div class="row"><button class="btn r s" data-act="print">${icon('file', 16)}인쇄 · PDF 저장</button>${w.id ? `<button class="btn o s" data-act="editSheet" data-id="${w.id}">수정</button><button class="btn o s" data-act="delSheet" data-id="${w.id}">삭제</button>` : ''}</div></div>
-  <p class="small noprint">인쇄 창에서 대상을 "PDF로 저장"으로 바꾸면 PDF 파일로 저장돼요.</p>
-  <div class="paper"><div class="phdr"><div><div class="ptitle">${esc(w.title)}</div><div class="small">${esc(S.academy.name)} · ${fmtDate(w.date)} · ${n}문항</div></div><div class="pname">이름 <span>${esc(names.length === 1 ? names[0] : '')}</span></div></div>
-  <div class="pbody ${w.cols === 1 ? 'c1' : ''}">${blocks}</div>
-  ${w.with_answers ? `<div class="pans"><div class="ptitle" style="font-size:18px">정답</div><div class="pansg">${answers.map(([k, a]) => `<div><b>${k}</b> ${esc(a || '-')}</div>`).join('')}</div>
-  ${answers.some(x => x[2]) ? `<div class="ptitle" style="font-size:16px;margin-top:18px">해설</div><div style="display:grid;gap:8px;margin-top:8px;font-size:13px">${answers.filter(x => x[2]).map(([k, a, e]) => `<div><b>${k}번 (${esc(a || '-')})</b> <span style="white-space:pre-wrap">${esc(e)}</span></div>`).join('')}</div>` : ''}</div>` : ''}</div>`;
+  <p class="small noprint">인쇄 창에서 대상을 "PDF로 저장"으로 바꾸면 PDF 파일로 저장돼요. 배경 그래픽은 꺼도 돼요.</p>
+  <div class="paper">
+    <div class="ex-top"><span>${esc(S.academy.name)}</span><span>${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.</span></div>
+    <div class="ex-head"><div class="ex-l">문항 수 ${n}개<br>${esc(w.title)}</div>
+      <div><div class="ex-subj">${esc(subjName)} 영역</div></div>
+      <div class="ex-r">성명<u>${esc(names.length === 1 ? names[0] : '')}</u><br>수험 번호<u></u></div></div>
+    <div class="pbody ${w.cols === 1 ? 'c1' : ''}">${blocks}</div>
+    ${w.with_answers ? `<div class="pans"><h3>정답</h3>${ansTable}
+      ${answers.some(x => x[2]) ? `<h3 style="margin-top:8mm">해설</h3><div class="pexp">${answers.filter(x => x[2]).map(([k, a, e]) => `<div><b>${k}. [정답 ${esc(a || '-')}]</b> ${esc(e)}</div>`).join('')}</div>` : ''}</div>` : ''}
+  </div>`;
 }
 /* 학생 맞춤 시험지: 취약 유형별로 문제를 골라 담는다 */
 function makeClinicSheet(sid, subj) {
@@ -1519,7 +1549,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.8 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.9 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
