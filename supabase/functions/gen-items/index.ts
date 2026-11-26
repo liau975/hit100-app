@@ -89,6 +89,7 @@ Deno.serve(async (req) => {
     const b = await req.json();
     const { data: mem } = await sb.from("members").select("role").eq("user_id", user.id).eq("academy_id", b.academy_id).maybeSingle();
     if (!mem || mem.role === "student") return j({ error: "선생님 계정만 쓸 수 있어요." }, 403);
+    if (b.action === "exam") return j(await importExam(key, b));
 
     const subject = String(b.subject || "kor");
     const subname = String(b.subname || "").slice(0, 40);
@@ -256,3 +257,76 @@ Deno.serve(async (req) => {
     return j({ error: String((e as Error)?.message || e) }, 500);
   }
 });
+
+// ================= 시험 정답 자동 가져오기 (action: "exam") =================
+// 웹 검색으로 평가원·교육청·EBSi 정답표를 찾아 두 곳 이상 대조한 뒤 구조화해서 돌려준다.
+const EXAM_TOOL = {
+  name: "save_exam",
+  description: "찾아서 대조한 시험 정답표를 저장한다",
+  input_schema: {
+    type: "object",
+    properties: {
+      found: { type: "boolean", description: "정답표를 찾았으면 true" },
+      sections: { type: "object", description: "구역 id → 그 구역의 정답 배열(구역 첫 문항부터 순서대로, 예: 35~45번 구역이면 35번 정답이 첫 칸). 객관식은 1~5 숫자, 단답형은 정수. 확인 못 한 문항은 null", additionalProperties: { type: "array", items: { type: ["integer", "null"] } } },
+      p3: { type: "object", description: "구역 id → 3점 문항 번호(시험 전체 기준 번호) 배열", additionalProperties: { type: "array", items: { type: "integer" } } },
+      p4: { type: "object", description: "구역 id → 4점 문항 번호 배열 (수학만)", additionalProperties: { type: "array", items: { type: "integer" } } },
+      sources: { type: "array", items: { type: "object", properties: { url: { type: "string" }, title: { type: "string" } }, required: ["url"] } },
+      agree: { type: "boolean", description: "서로 다른 두 곳 이상의 출처에서 모든 정답이 일치했으면 true" },
+      note: { type: "string", description: "불확실한 점, 출처끼리 달랐던 문항, 가답안 여부 등" },
+    },
+    required: ["found", "sections", "sources", "agree"],
+  },
+};
+
+async function importExam(key: string, b: any) {
+  const model = MODELS[String(b.quality)] || MODEL;
+  const secs = (Array.isArray(b.sections) ? b.sections : []).slice(0, 6);
+  const secDesc = secs.map((x: any) => `- 구역 id "${x.id}": ${x.name} — ${x.from}번~${x.to}번 (${x.to - x.from + 1}개)`).join("\n");
+  const system = [
+    "너는 한국 수능·모의고사 정답 데이터를 정리하는 꼼꼼한 조사원이다.",
+    "웹 검색과 웹 페이지 읽기로 요청한 시험의 공식 정답표를 찾는다.",
+    "우선순위: 한국교육과정평가원(suneung.re.kr, kice.re.kr), 시도교육청, EBSi의 정답·해설 PDF, 그다음 주요 언론사·입시업체 기사.",
+    "규칙:",
+    "- 모든 문항의 정답을 서로 다른 출처 두 곳 이상에서 대조한다. 일치하는 것만 쓴다.",
+    "- 출처끼리 다르거나 확인하지 못한 문항은 추측하지 말고 null로 두고 note에 적는다.",
+    "- 홀수형 기준. 배점(2점·3점·4점)도 정답표에서 확인한다.",
+    "- 수능·모의평가는 '학년도'로 부른다: 2026년 11월 시행 수능 = 2027학년도 수능, 2026년 6월·9월 모의평가 = 2027학년도 6월·9월 모의평가.",
+    "- 요청한 연도·월·학년·과목이 정확히 일치하는 시험만 쓴다. 다른 해 시험과 헷갈리지 않는다.",
+    "- 다 찾으면 save_exam 도구를 한 번 호출해서 끝낸다. 생각 과정은 쓰지 않는다.",
+  ].join("\n");
+  const user = [
+    `시험: ${b.label}`,
+    `과목: ${b.subjectName}${b.subname ? " " + b.subname : ""}`,
+    `구역 구성 (sections의 키로 이 id를 그대로 쓴다):\n${secDesc}`,
+    b.shortNote ? `참고: ${b.shortNote}` : "",
+  ].filter(Boolean).join("\n");
+
+  const tools: any[] = [{ type: "web_search_20250305", name: "web_search", max_uses: 8 }, { type: "web_fetch_20250910", name: "web_fetch", max_uses: 6 }, EXAM_TOOL];
+  const call = async (messages: any[], useFetch: boolean) => {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json", ...(useFetch ? { "anthropic-beta": "web-fetch-2025-09-10" } : {}) },
+      body: JSON.stringify({ model, max_tokens: 6000, system, tools: useFetch ? tools : tools.filter((t) => t.name !== "web_fetch"), messages }),
+    });
+    const o = await r.json();
+    if (!r.ok) throw new Error(o?.error?.message || String(r.status));
+    return o;
+  };
+  let useFetch = true;
+  const messages: any[] = [{ role: "user", content: user }];
+  for (let turn = 0; turn < 4; turn++) {
+    let o: any;
+    try { o = await call(messages, useFetch); }
+    catch (e) {
+      const m = String((e as Error).message || e);
+      if (useFetch && /web_fetch|beta/i.test(m)) { useFetch = false; turn--; continue; }
+      return { error: "AI 호출 실패: " + m };
+    }
+    const tu = (o.content || []).find((c: any) => c.type === "tool_use" && c.name === "save_exam");
+    if (tu) return { exam: tu.input, usage: o.usage || null };
+    if (o.stop_reason === "pause_turn") { messages.push({ role: "assistant", content: o.content }); continue; }
+    const txt = (o.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join(" ").slice(0, 300);
+    return { error: "정답표를 정리하지 못했어요" + (txt ? ": " + txt : "") };
+  }
+  return { error: "검색이 너무 길어져서 멈췄어요. 다시 시도해 주세요." };
+}
