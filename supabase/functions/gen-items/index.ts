@@ -92,6 +92,7 @@ Deno.serve(async (req) => {
     const { data: mem } = await sb.from("members").select("role").eq("user_id", user.id).eq("academy_id", b.academy_id).maybeSingle();
     if (!mem || mem.role === "student") return j({ error: "선생님 계정만 쓸 수 있어요." }, 403);
     if (b.action === "exam") return j(await importExam(key, b));
+    if (b.action === "analyze") return j(await analyzeExam(key, b));
 
     const subject = String(b.subject || "kor");
     const subname = String(b.subname || "").slice(0, 40);
@@ -342,4 +343,69 @@ async function importExam(key: string, b: any) {
     return { error: "정답표를 정리하지 못했어요" + (txt ? ": " + txt : "") };
   }
   return { error: "검색이 너무 길어져서 멈췄어요. 다시 시도해 주세요." };
+}
+
+// ================= 문항별 심층 분석 (action: "analyze") =================
+const ANA_TOOL = {
+  name: "save_analysis",
+  description: "문항별 심층 분석을 저장한다",
+  input_schema: {
+    type: "object",
+    properties: {
+      items: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            key: { type: "string", description: "요청에서 받은 문항 key 그대로" },
+            type: { type: "string", description: "세부 유형 (예: 독서>과학 · 정보 확인)" },
+            intent: { type: "string", description: "출제 의도: 이 문항이 무엇을 묻는지 1~2문장" },
+            point: { type: "string", description: "풀이 핵심: 정답을 고르는 데 필요한 근거와 사고 과정 (지문의 몇 문단·어떤 정보인지 등) 2~4문장" },
+            answer: { type: "string", description: "정답 선지가 맞는 이유 1~2문장" },
+            traps: { type: "array", description: "매력적인 오답 1~3개", items: { type: "object", properties: { choice: { type: "string", description: "선지 번호 예: ②" }, why: { type: "string", description: "왜 헷갈리고 왜 틀렸는지" } }, required: ["choice", "why"] } },
+            level: { type: "string", enum: ["최상", "상", "중", "하", "최하"] },
+            tip: { type: "string", description: "이 유형을 틀린 학생을 위한 학습·풀이 팁 1~2문장" },
+          },
+          required: ["key", "intent", "point", "level", "tip"],
+        },
+      },
+      sources: { type: "array", items: { type: "string" } },
+      note: { type: "string" },
+    },
+    required: ["items"],
+  },
+};
+async function analyzeExam(key, b: any) {
+  const model = MODELS[String(b.quality)] || MODEL;
+  const qs = (Array.isArray(b.qs) ? b.qs : []).slice(0, 8);
+  const system = [
+    "너는 대한민국 수능·모의고사를 20년 가르친 일타 강사다. 요청한 시험의 각 문항을 학생 클리닉용으로 심층 분석한다.",
+    "웹 검색·웹 페이지 읽기로 EBSi 해설, 평가원·교육청 해설, 주요 강사·언론의 문항 분석을 찾아 근거로 삼는다.",
+    "규칙:",
+    "- 문제 본문·지문·선지를 길게 옮겨 적지 않는다. 필요하면 짧게 가리키기만 하고 분석은 모두 자기 말로 쓴다.",
+    "- 주어진 정답과 다르게 분석하지 않는다. 정답 근거를 확인하지 못한 문항은 point에 그렇게 밝힌다.",
+    "- 학원 선생님이 학생에게 바로 설명할 수 있게 구체적으로 쓴다.",
+    "- 다 끝나면 save_analysis 도구를 한 번 호출한다. 생각 과정은 쓰지 않는다.",
+  ].join("\n");
+  const user = [
+    `시험: ${b.label}`, `과목: ${b.subjectName}`,
+    `분석할 문항:`, ...qs.map((x: any) => `- key ${x.key}: ${x.no}번${x.track ? ` (${x.track})` : ""} · 정답 ${x.answer} · ${x.pts}점${x.area ? ` · 영역 ${x.area}` : ""}${x.type ? ` · 유형 ${x.type}` : ""}${x.rate != null ? ` · 우리 학원 정답률 ${x.rate}%` : ""}`),
+  ].join("\n");
+  const tools: any[] = [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }, { type: "web_fetch_20250910", name: "web_fetch", max_uses: 4 }, ANA_TOOL];
+  let useFetch = true;
+  const messages: any[] = [{ role: "user", content: user }];
+  for (let turn = 0; turn < 4; turn++) {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json", ...(useFetch ? { "anthropic-beta": "web-fetch-2025-09-10" } : {}) },
+      body: JSON.stringify({ model, max_tokens: 8000, system, tools: useFetch ? tools : tools.filter((t) => t.name !== "web_fetch"), messages }),
+    });
+    const o = await r.json();
+    if (!r.ok) { const m = String(o?.error?.message || r.status); if (useFetch && /web_fetch|beta/i.test(m)) { useFetch = false; turn--; continue; } return { error: "AI 호출 실패: " + m }; }
+    const tu = (o.content || []).find((c: any) => c.type === "tool_use" && c.name === "save_analysis");
+    if (tu) return { analysis: tu.input };
+    if (o.stop_reason === "pause_turn") { messages.push({ role: "assistant", content: o.content }); continue; }
+    return { error: "분석을 정리하지 못했어요 (stop: " + (o.stop_reason || "?") + ")" };
+  }
+  return { error: "검색이 너무 길어져서 멈췄어요." };
 }

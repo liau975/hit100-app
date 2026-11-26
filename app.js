@@ -99,7 +99,7 @@ function normalizeExam(e) {
   e.choices = +e.choices || 5; e.defPts = +e.defPts || 2; e.max = +e.max || 100; e.grading = e.grading || 'relative';
   return e;
 }
-const SPEC_KEYS = ['subject', 'subname', 'layout', 'choices', 'defPts', 'max', 'grading', 'p3', 'p4', 'short', 'types'];
+const SPEC_KEYS = ['subject', 'subname', 'layout', 'choices', 'defPts', 'max', 'grading', 'p3', 'p4', 'short', 'types', 'analysis'];
 function examToRow(e) { const r = {id: e.id, academy_id: e.academy_id || null, title: e.title, year: e.year, grade: e.grade, month: e.month, kind: e.kind, key: e.key, cuts: e.cuts, areas: e.areas, ext_rates: e.ext_rates, source: e.source || '', spec: {}}; SPEC_KEYS.forEach(k => r.spec[k] = e[k]); return r; }
 
 const QN = e => e.layout.qcount;
@@ -286,7 +286,7 @@ const SB = {
   async like(pid, on) { if (on) this.chk(await sb.from('post_likes').insert({post_id: pid})); else this.chk(await sb.from('post_likes').delete().eq('post_id', pid).eq('user_id', S.user.id)); },
   async shareReport(row) { this.chk(await sb.from('report_shares').insert(row)); },
   async getReport(token) { return this.chk(await sb.rpc('get_report', {p_token: token})); },
-  async importExam(body) { return await this.genRaw({...body, action: 'exam'}); },
+  async importExam(body) { return await this.genRaw({action: 'exam', ...body}); },
   async genRaw(body) {
     const {data, error} = await sb.functions.invoke('gen-items', {body});
     if (error) { let m = error.message || String(error); try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (e) {}
@@ -525,7 +525,7 @@ const DEFAULT_PERMS = {
 function permsFor(title) { const st = ((S.academy || {}).settings || {}).perms || {}; return {...(DEFAULT_PERMS[title] || DEFAULT_PERMS.선생님), ...(st[title] || {})}; }
 function can(k) { if (!S.member) return false; if (S.member.role === 'student') return false; if (S.member.role === 'owner') return true; return !!permsFor(roleName(S.member))[k]; }
 const ACT_PERM = {newStudent: 'student_edit', editStudent: 'student_edit', delStudent: 'student_delete', assign: 'student_edit', newExam: 'exam_edit', editExam: 'exam_edit', delExam: 'exam_delete', saveExam: 'exam_edit',
-  gradeStudent: 'grade', gradeExam: 'grade', gradePlanned: 'grade', editAttempt: 'grade', gSave: 'grade', delAttempt: 'attempt_delete', newItem: 'bank_edit', impExam: 'exam_edit', autoTypes: 'exam_edit', impSave: 'exam_edit', bulkAdd: 'bank_edit', aiGen: 'bank_edit', aiSave: 'bank_edit', aiSaveCart: 'bank_edit', editItem: 'bank_edit', saveItem: 'bank_edit', saveItemNext: 'bank_edit', delItem: 'bank_delete',
+  gradeStudent: 'grade', gradeExam: 'grade', gradePlanned: 'grade', editAttempt: 'grade', gSave: 'grade', delAttempt: 'attempt_delete', newItem: 'bank_edit', impExam: 'exam_edit', autoTypes: 'exam_edit', deepRun: 'exam_edit', impSave: 'exam_edit', bulkAdd: 'bank_edit', aiGen: 'bank_edit', aiSave: 'bank_edit', aiSaveCart: 'bank_edit', editItem: 'bank_edit', saveItem: 'bank_edit', saveItemNext: 'bank_edit', delItem: 'bank_delete',
   noteCause: 'grade', copyCode: 'manage_members', genLink: 'student_edit', openCart: 'sheet', cartToggle: 'sheet', clinicSheet: 'sheet', editSheet: 'sheet', delSheet: 'sheet', sheetSave: 'sheet', sheetPreview: 'sheet', mKick: 'manage_members', saveAcademy: 'academy_settings', bkCopy: 'backup', bkLoad: 'backup', leaveAcad: null};
 const actAllowed = el => { const a = el.dataset.act; if (a === 'nav' && el.dataset.v === 'grade') return can('grade'); const p = ACT_PERM[a]; return !p || can(p); };
 const visibleStudents = () => can('all_students') ? S.students : S.students.filter(s => (s.teacher_ids || []).includes(S.user.id) || s.created_by === S.user.id);
@@ -749,7 +749,8 @@ function vExam() {
   const scores = st.atts.map(a => evalAttempt(a)).filter(Boolean), avg = scores.length ? (scores.reduce((t, r) => t + r.score, 0) / scores.length).toFixed(1) : '-';
   const trSeg = isSplit(e) ? `<div class="seg" style="margin-bottom:10px">${e.layout.tracks.map(t => `<button class="${tr === t.id ? 'on' : ''}" data-act="etr" data-v="${esc(t.id)}">${esc(t.name)}</button>`).join('')}</div>` : '';
   let body = '';
-  if (tab === 'ana') {
+  if (tab === 'deep') body = deepBody(e, tr, st, trSeg);
+  else if (tab === 'ana') {
     const rows = []; for (let q = 1; q <= QN(e); q++) { const d = diff(e, tr, q, st), o = st.m[sk(e, tr, q)] || {n: 0, w: 0, ch: [0, 0, 0, 0, 0, 0]}, k = keyOf(e, tr, q), mx = Math.max(1, ...o.ch.slice(1)), sh = isShort(e, tr, q);
       rows.push(`<tr><td>${q}${sh ? ' <span class="tag">단답</span>' : ''}</td><td>${esc(typeOf(e, tr, q))}</td><td class="n">${pts(e, tr, q)}</td><td class="n">${k === null ? '-' : fmtAns(e, tr, q, k)}</td><td class="n">${d.rate == null ? '-' : Math.round(d.rate) + '%'}<br><span class="small">${d.src}${d.n ? ' ' + d.n + '명' : ''}</span></td><td>${lvBadge(d)}</td>
       <td>${sh ? '<span class="small">-</span>' : `<div class="dist" title="선지 선택 비율">${Array.from({length: e.choices}, (_, i) => i + 1).map(c => `<span class="${c === k ? 'k' : ''}" style="height:${(o.ch[c] / mx * 100).toFixed(0)}%"></span>`).join('')}</div>`}</td></tr>`); }
@@ -768,7 +769,43 @@ function vExam() {
   }
   return `<div class="top"><div><button class="btn o s" data-act="nav" data-v="exams">← 시험 목록</button><h1 style="margin-top:10px">${esc(e.title)}</h1><div class="small">${esc(examSubj(e))} · ${e.academy_id ? '우리 학원 시험' : '공용 시험'}</div>${canEditExam(e) && !DEMO && can('exam_edit') && TAXO[e.subject] && TAXO[e.subject].length ? `<button class="btn o s" data-act="autoTypes" data-id="${e.id}" style="margin-top:8px">✨ 문항별 유형 자동 채우기</button>` : ''}</div>
   <div class="row"><button class="btn r s" data-act="gradeExam" data-id="${e.id}">이 시험으로 채점</button>${canEditExam(e) ? `<button class="btn o s" data-act="editExam" data-id="${e.id}">수정</button><button class="btn o s" data-act="delExam" data-id="${e.id}">삭제</button>` : ''}</div></div>
-  <div class="tabs">${[['ana', '문항 분석'], ['info', '정답 · 배점 · 등급컷']].map(([k, l]) => `<button class="tab ${tab === k ? 'on' : ''}" data-act="tab" data-v="${k}">${l}</button>`).join('')}</div>${body}`;
+  <div class="tabs">${[['ana', '문항 분석'], ['deep', '🔍 심층 분석'], ['info', '정답 · 배점 · 등급컷']].map(([k, l]) => `<button class="tab ${tab === k ? 'on' : ''}" data-act="tab" data-v="${k}">${l}</button>`).join('')}</div>${body}`;
+}
+/* 문항별 심층 분석 */
+function deepBody(e, tr, st, trSeg) {
+  const A = e.analysis || {}, run = S._deep && S._deep.id === e.id ? S._deep : null, n = QN(e);
+  let have = 0; for (let q = 1; q <= n; q++) if (A[sk(e, tr, q)]) have++;
+  const canRun = canEditExam(e) && can('exam_edit') && !DEMO;
+  const head = `${trSeg}<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><b>문항별 심층 분석</b><div class="small">출제 의도 · 풀이 핵심 · 정답 근거 · 매력적인 오답 · 학습 팁을 1번부터 하나씩 뜯어봐요. ${have}/${n}문항 분석됨</div></div>
+    ${run ? `<span class="tag y">분석 중… ${run.done}/${run.total} 묶음</span>` : canRun ? `<button class="btn r" data-act="deepRun" data-id="${e.id}" data-tr="${esc(tr)}">${have ? (have < n ? '나머지 문항 분석하기' : '다시 분석하기') : '🔍 1번부터 심층 분석하기'}</button>` : ''}</div>
+    ${!canRun && !have ? '<p class="small">관리자가 분석을 만들면 여기서 볼 수 있어요.</p>' : ''}`;
+  const cards = []; for (let q = 1; q <= n; q++) { const a = A[sk(e, tr, q)]; if (!a) continue; const k = keyOf(e, tr, q), d = diff(e, tr, q, st);
+    cards.push(`<div class="card deep" id="dq${q}"><div class="row" style="gap:8px;justify-content:space-between"><div class="row" style="gap:8px"><span class="dqn">${q}</span><b>${esc(a.type || typeOf(e, tr, q))}</b>${a.level ? `<span class="lv ${a.level}">${a.level}</span>` : ''}</div>
+      <div class="row" style="gap:6px"><span class="tag">정답 ${k === null ? '-' : esc(fmtAns(e, tr, q, k))}</span><span class="tag">${pts(e, tr, q)}점</span>${d.rate != null ? `<span class="tag ${d.rate < 50 ? 'r' : d.rate < 80 ? 'y' : 'g'}">정답률 ${Math.round(d.rate)}%</span>` : ''}</div></div>
+      <div class="dgrid"><div><h4>🎯 출제 의도</h4><p>${esc(a.intent || '')}</p></div><div><h4>🔑 풀이 핵심</h4><p>${esc(a.point || '')}</p></div>
+      ${a.answer ? `<div><h4>✅ 정답 근거</h4><p>${esc(a.answer)}</p></div>` : ''}
+      ${(a.traps || []).length ? `<div><h4>⚠️ 매력적인 오답</h4>${a.traps.map(t => `<p><b>${esc(t.choice)}</b> ${esc(t.why)}</p>`).join('')}</div>` : ''}
+      ${a.tip ? `<div class="dtip"><h4>💡 학습 팁</h4><p>${esc(a.tip)}</p></div>` : ''}</div></div>`); }
+  const jump = have ? `<div class="chips dchips" style="margin:12px 0">${Array.from({length: n}, (_, i) => i + 1).map(q => A[sk(e, tr, q)] ? `<a class="chip" href="#dq${q}">${q}</a>` : `<span class="chip" style="opacity:.5">${q}</span>`).join('')}</div>` : '';
+  return head + jump + (cards.join('') || (run ? '<div class="empty">분석하는 중이에요. 묶음마다 1~2분 걸리고, 끝난 문항부터 여기에 나타나요.</div>' : ''));
+}
+async function deepRun(e, tr) {
+  const n = QN(e), A = e.analysis || {}, st = examStats(e), todo = [];
+  for (let q = 1; q <= n; q++) { const kk = sk(e, tr, q); if (A[kk] && !S._deepAll) continue; const k = keyOf(e, tr, q), d = diff(e, tr, q, st);
+    todo.push({key: kk, no: q, track: q > commonLen(e) ? trackName(e, tr) : '', answer: k === null ? '?' : fmtAns(e, tr, q, k), pts: pts(e, tr, q), area: areaOf(e, tr, q), type: typeOf(e, tr, q), rate: d.rate == null ? null : Math.round(d.rate)}); }
+  if (!todo.length) { toast('이미 다 분석돼 있어요'); return; }
+  const chunks = []; for (let i = 0; i < todo.length; i += 5) chunks.push(todo.slice(i, i + 5));
+  S._deep = {id: e.id, done: 0, total: chunks.length}; render();
+  const label = `${e.title} (${e.year}년 ${e.month}월 시행, 고${e.grade})`; let fails = 0, idx = 0;
+  const worker = async () => { while (idx < chunks.length) { const c = chunks[idx++];
+    try { const r = await API.importExam({action: 'analyze', academy_id: S.academy.id, label, subjectName: examSubj(e), qs: c});
+      const items = (r.analysis && r.analysis.items) || []; if (!items.length) throw r.error || 'empty';
+      const cur = examById(e.id); const an = {...(cur.analysis || {})}; items.forEach(it => { if (c.some(x => x.key === it.key)) { const {key, ...rest} = it; an[key] = rest; } });
+      await save('exams', {...cur, analysis: an}); }
+    catch (err) { fails++; }
+    S._deep.done++; if (S.view === 'exam') render(); } };
+  await Promise.all([worker(), worker(), worker()]);
+  S._deep = null; S._deepAll = false; render(); toast(fails ? `분석 완료 (실패 ${fails}묶음 · 다시 누르면 빠진 문항만 분석해요)` : '심층 분석을 마쳤어요');
 }
 function examDraft(src) {
   if (src) return normalizeExam(JSON.parse(JSON.stringify(src)));
@@ -1619,7 +1656,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.3 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.4 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
@@ -1688,6 +1725,7 @@ const ACT = {
   esub: el => { S.f.esub = el.dataset.v; render(); },
   tsub: el => { S.f.tsub = el.dataset.v; render(); },
   impExam: () => impForm(),
+  deepRun: el => { const e = examById(el.dataset.id); if (!e || S._deep) return; let have = 0; for (let q = 1; q <= QN(e); q++) if ((e.analysis || {})[sk(e, el.dataset.tr, q)]) have++; S._deepAll = have >= QN(e); deepRun(e, el.dataset.tr); },
   autoTypes: async el => { const e = S.exams.find(x => x.id === el.dataset.id); if (!e) return; el.disabled = true; el.textContent = '유형 찾는 중… (1~2분)';
     const c = commonLen(e), q = QN(e), secs = isSplit(e) ? [...(c ? [{id: 'common', name: '공통', from: 1, to: c}] : []), ...e.layout.tracks.map(t => ({id: t.id, name: t.name, from: c + 1, to: q}))] : [{id: 'common', name: examSubj(e) + ' 전체', from: 1, to: q}];
     try { const r = await API.importExam({academy_id: S.academy.id, label: e.title + ` (${e.year}년 ${e.month}월 시행, 고${e.grade})`, subjectName: examSubj(e), sections: secs, taxo: TAXO[e.subject] || [], want: 'types'});
