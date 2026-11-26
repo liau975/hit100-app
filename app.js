@@ -591,11 +591,17 @@ function vHome() {
   <h2>예정된 시험</h2>${planned.length ? `<div class="list">${planned.map(a => attItem(a, true)).join('')}</div>` : '<div class="empty">예정된 시험이 없어요. 학생 페이지에서 시험을 배정하세요.</div>'}
   <h2>최근 채점</h2>${recent.length ? `<div class="list">${recent.map(a => attItem(a, true)).join('')}</div>` : '<div class="empty">아직 채점 기록이 없어요.</div>'}`;
 }
+/* 과목 아이콘 · 등급 색 · 이름 아바타 (외관) */
+const SUBJ_SHORT = {kor: '국', math: '수', eng: '영', hist: '한', inq: '탐', etc: '기'};
+const subjIc = sj => `<span class="sic s-${SUBJ_SHORT[sj] ? sj : 'etc'}">${SUBJ_SHORT[sj] || '기'}</span>`;
+const gradeTag = (r) => { const g = r.g, c = !g ? 'r' : g <= 2 ? 'g' : g <= 4 ? 'b' : g <= 6 ? 'y' : 'r'; return `<span class="gtag ${c}">${r.score}<small>점</small>${g ? `<em>${g}등급</em>` : ''}</span>`; };
+const AV_GR = ['#ff5f6d,#ff9a6b', '#5b8cff,#8f6bff', '#16b98a,#4fd1c5', '#f59e0b,#f97316', '#ec4899,#a855f7', '#0ea5e9,#22d3ee'];
+const avatar = (name, lg) => { const n = String(name || '?'), h = [...n].reduce((x, c) => x + c.charCodeAt(0), 0); return `<span class="sav${lg ? ' lg' : ''}" style="background:linear-gradient(135deg,${AV_GR[h % AV_GR.length]})">${esc(n.replace(/\s*\(.*\)/, '').slice(-2))}</span>`; };
 function attItem(a, withName) {
   const s = stuById(a.student_id), e = examById(a.exam_id), r = a.status === 'done' ? evalAttempt(a) : null;
-  return `<button class="item" data-act="${a.status === 'done' ? 'openReport' : 'gradePlanned'}" data-id="${a.id}">
+  return `<button class="item" data-act="${a.status === 'done' ? 'openReport' : 'gradePlanned'}" data-id="${a.id}">${e ? subjIc(e.subject) : ''}
   <span class="grow"><b>${withName ? esc(s ? s.name : '(삭제된 학생)') + ' · ' : ''}${esc(examTitle(e))}</b><br><span class="small">${a.status === 'done' ? '응시 ' + fmtDate(a.taken_date) : '예정 ' + fmtDate(a.planned_date)}${e ? ' · ' + esc(examSubj(e)) + (isSplit(e) ? ' ' + esc(trackName(e, trackFor(e, a.subject))) : '') : ''}</span></span>
-  ${r ? `<span class="tag r">${r.score}점${r.g ? ' · ' + r.g + '등급' : ''}</span>` : '<span class="tag y">예정 · 채점하기</span>'}</button>`;
+  ${r ? gradeTag(r) : '<span class="tag y">예정 · 채점하기</span>'}</button>`;
 }
 
 /* ---------- 학생 ---------- */
@@ -604,7 +610,7 @@ function vStudents() {
   return `<div class="top"><div><h1>학생</h1><div class="small">${visibleStudents().length}명${can('all_students') ? '' : ' · 담당 학생만 보여요'}</div></div><button class="btn r" data-act="newStudent">학생 추가</button></div>
   <input data-in="q" value="${esc(S.q)}" placeholder="이름이나 학교로 검색" style="margin-bottom:12px">
   ${list.length ? `<div class="cards">${list.map(s => { const last = lastDone(s.id), r = last && evalAttempt(last);
-    return `<button class="item" data-act="openStudent" data-id="${s.id}"><span class="grow"><b>${esc(s.name)}</b><br><span class="small">${esc(s.school)} ${esc(s.grade)}학년</span></span>${r ? `<span class="tag r">${r.g ? r.g + '등급' : r.score + '점'}</span>` : '<span class="tag">기록 없음</span>'}</button>`; }).join('')}</div>` : '<div class="empty">학생이 없어요. 학생 추가를 눌러 등록하세요.</div>'}`;
+    return `<button class="item" data-act="openStudent" data-id="${s.id}">${avatar(s.name)}<span class="grow"><b>${esc(s.name)}</b><br><span class="small">${esc(s.school)} ${esc(s.grade)}학년</span></span>${r ? gradeTag(r) : '<span class="tag">기록 없음</span>'}</button>`; }).join('')}</div>` : '<div class="empty">학생이 없어요. 학생 추가를 눌러 등록하세요.</div>'}`;
 }
 const doneOf = sid => S.attempts.filter(a => a.student_id === sid && a.status === 'done').sort((a, b) => String(a.taken_date).localeCompare(String(b.taken_date)));
 const lastDone = sid => { const d = doneOf(sid); return d[d.length - 1]; };
@@ -636,7 +642,7 @@ function vStudent() {
   let body = '';
   if (tab === 'plan') {
     body = `<div class="row" style="margin-bottom:10px"><button class="btn r s" data-act="assign" data-id="${s.id}">시험 배정</button><button class="btn o s" data-act="gradeStudent" data-id="${s.id}">바로 채점</button></div>
-    <h3>예정</h3>${planned.length ? `<div class="list">${planned.map(a => `<div class="item" style="cursor:default"><span class="grow"><b>${esc(examTitle(examById(a.exam_id)))}</b><br><span class="small">예정 ${fmtDate(a.planned_date)}</span></span><button class="btn s r" data-act="gradePlanned" data-id="${a.id}">채점</button><button class="btn s o" data-act="delAttempt" data-id="${a.id}">삭제</button></div>`).join('')}</div>` : '<div class="empty">예정된 시험이 없어요.</div>'}
+    <h3>예정</h3>${planned.length ? `<div class="list">${planned.map(a => `<div class="item" style="cursor:default">${examById(a.exam_id) ? subjIc(examById(a.exam_id).subject) : ''}<span class="grow"><b>${esc(examTitle(examById(a.exam_id)))}</b><br><span class="small">예정 ${fmtDate(a.planned_date)}</span></span><button class="btn s r" data-act="gradePlanned" data-id="${a.id}">채점</button><button class="btn s o" data-act="delAttempt" data-id="${a.id}">삭제</button></div>`).join('')}</div>` : '<div class="empty">예정된 시험이 없어요.</div>'}
     <h3>응시 기록</h3>${evals.length ? `<div class="list">${[...evals].reverse().map(x => attItem(x.a, false)).join('')}</div>` : '<div class="empty">아직 응시 기록이 없어요.</div>'}
     ${s.memo ? `<h3>메모</h3><div class="card" style="white-space:pre-wrap">${esc(s.memo)}</div>` : ''}`;
   } else if (tab === 'trend') {
@@ -661,7 +667,7 @@ function vStudent() {
   } else {
     body = wrongNote(s, evals);
   }
-  return `<div class="top"><div>${isStudent() ? '' : '<button class="btn o s noprint" data-act="nav" data-v="students">← 학생 목록</button>'}<h1 style="margin-top:10px">${esc(s.name)} ${(m => m && m.school_name ? (m.school_status === 'verified' ? schoolBadge(m.school_name) : `<span class="tag y">${esc(shortSchool(m.school_name))} 승인 대기</span>`) : '')(memberOfStudent(s.id))}</h1>
+  return `<div class="top"><div>${isStudent() ? '' : '<button class="btn o s noprint" data-act="nav" data-v="students">← 학생 목록</button>'}<h1 style="margin-top:10px;display:flex;align-items:center;gap:12px">${avatar(s.name, true)}${esc(s.name)} ${(m => m && m.school_name ? (m.school_status === 'verified' ? schoolBadge(m.school_name) : `<span class="tag y">${esc(shortSchool(m.school_name))} 승인 대기</span>`) : '')(memberOfStudent(s.id))}</h1>
   <div class="small">${esc(s.school)} ${esc(s.grade)}학년 · 국어 ${KOR_TR[s.subject] || '-'} · 수학 ${({pr: '확통', ca: '미적', ge: '기하'})[(s.tracks || {}).math] || '-'}</div></div>
   <div class="row">${!isStudent() && can('student_edit') ? `<span class="small">학생 앱 코드</span>${s.link_code ? `<b style="letter-spacing:.08em">${esc(s.link_code)}</b><button class="btn o s" data-act="copyLink" data-v="${esc(s.link_code)}">복사</button>` : `<button class="btn o s" data-act="genLink" data-id="${s.id}">학생 코드 만들기</button>`}` : ''}<button class="btn o s" data-act="editStudent" data-id="${s.id}">수정</button><button class="btn o s" data-act="delStudent" data-id="${s.id}">삭제</button></div></div>
   <div class="kpis"><div class="kpi"><span class="small">최근 점수${tsub ? ' · ' + SUBJECTS[tsub] : ''}</span><b>${last ? last.r.score : '-'}</b></div><div class="kpi"><span class="small">최근 등급</span><b>${last && last.r.g ? last.r.g : '-'}</b></div>
@@ -733,7 +739,7 @@ function vExams() {
   <input data-in="q" value="${esc(S.q)}" placeholder="예: 2026 고2 9월 수학" style="margin-bottom:10px">
   <div class="seg" style="margin-bottom:14px">${[['', '전체'], ...Object.entries(SUBJECTS)].map(([k, l]) => `<button class="${fs === k ? 'on' : ''}" data-act="esub" data-v="${k}">${l}</button>`).join('')}</div>
   ${list.length ? `<div class="list">${list.map(e => { const n = S.attempts.filter(a => a.exam_id === e.id && a.status === 'done').length;
-    return `<button class="item" data-act="openExam" data-id="${e.id}"><span class="grow"><b>${esc(e.title)}</b><br><span class="small">${QN(e)}문항${isSplit(e) ? ' · ' + e.layout.tracks.map(t => esc(t.name)).join('/') : ''} · ${e.grading === 'absolute' ? '절대평가' : e.grading === 'none' ? '등급 없음' : '상대평가'} · 응시 ${n}명</span></span>
+    return `<button class="item" data-act="openExam" data-id="${e.id}">${subjIc(e.subject)}<span class="grow"><b>${esc(e.title)}</b><br><span class="small">${QN(e)}문항${isSplit(e) ? ' · ' + e.layout.tracks.map(t => esc(t.name)).join('/') : ''} · ${e.grading === 'absolute' ? '절대평가' : e.grading === 'none' ? '등급 없음' : '상대평가'} · 응시 ${n}명</span></span>
     <span class="tag b">${esc(examSubj(e))}</span>${e.academy_id ? '' : '<span class="tag g">공용</span>'}${hasKey(e, trackFor(e, null)) ? '' : '<span class="tag y">정답 미입력</span>'}</button>`; }).join('')}</div>`
     : `<div class="empty">찾는 시험이 아직 없어요.<br><button class="btn r" style="margin-top:12px" data-act="newExam">"${esc(q || '새 시험')}" 등록하기</button></div>`}`;
 }
@@ -1613,7 +1619,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.2 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.3 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }

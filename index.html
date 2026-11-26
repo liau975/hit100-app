@@ -250,6 +250,47 @@ td.n,th.n{text-align:right;white-space:nowrap}
 @media(max-width:820px){.paper{padding:8mm 6mm;min-height:0;font-size:10pt}.pbody{column-count:1}.ex-subj{font-size:20pt}.ex-head{grid-template-columns:1fr}.ex-head .ex-r{justify-self:start;text-align:left}}
 @media print{@page{size:A4;margin:12mm 11mm}.paper{box-shadow:none;padding:0;max-width:none;min-height:0;width:auto}.pbody{column-count:2}.pbody.c1{column-count:1}.main .top,.main .small.noprint{display:none!important}}
 @media print{.side,.bnav,.hdr,.noprint,.demo{display:none!important}.app{display:block}.main{padding:0}body{background:#fff}}
+
+/* ===== 외관 리프레시 ===== */
+body{background:
+  radial-gradient(900px 520px at 100% -10%,light-dark(rgba(255,122,89,.13),rgba(255,122,89,.10)),transparent 60%),
+  radial-gradient(700px 480px at -10% 30%,light-dark(rgba(91,140,255,.09),rgba(91,140,255,.08)),transparent 60%),
+  radial-gradient(800px 500px at 60% 110%,light-dark(rgba(236,72,153,.08),rgba(168,85,247,.08)),transparent 60%),var(--bg);background-attachment:fixed}
+.side{background:color-mix(in srgb,var(--card) 88%,transparent);backdrop-filter:blur(14px)}
+.card,.kpi,.item,.res,.omr{transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.item{border-radius:16px;padding:12px 14px;gap:14px}
+button.item:hover,.cards>.card:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(40,10,20,.10);border-color:var(--line)}
+.kpi{position:relative;overflow:hidden;border-radius:20px;padding:16px 18px}
+.kpi::after{content:"";position:absolute;right:-30px;bottom:-30px;width:110px;height:110px;border-radius:50%;background:var(--redt);opacity:.55}
+.kpi:has(.ic.b)::after{background:var(--bluet)}.kpi:has(.ic.g)::after{background:var(--okt)}.kpi:has(.ic.y)::after{background:var(--midt)}
+.kpi>*{position:relative;z-index:1}
+.kpi .ic{width:46px;height:46px;border-radius:14px;background:var(--grad);color:#fff;box-shadow:0 6px 14px rgba(226,56,79,.28)}
+.kpi .ic.b{background:linear-gradient(135deg,#5b8cff,#8f6bff);color:#fff;box-shadow:0 6px 14px rgba(91,140,255,.3)}
+.kpi .ic.g{background:linear-gradient(135deg,#16b98a,#4fd1c5);color:#fff;box-shadow:0 6px 14px rgba(22,185,138,.3)}
+.kpi .ic.y{background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;box-shadow:0 6px 14px rgba(245,158,11,.3)}
+.kpi b{font-size:1.9rem;letter-spacing:-.02em}
+.hero{border-radius:26px;padding:30px;background:linear-gradient(120deg,#e2384f 0%,#ff6a5b 45%,#ff9a6b 100%)}
+.hero::before{content:"";position:absolute;left:38%;bottom:-90px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.10)}
+.main h2{display:flex;align-items:center;gap:8px}
+.main h2::before{content:"";width:5px;height:18px;border-radius:3px;background:var(--grad);flex:none}
+.card>h2:first-child::before,.report h2::before{display:none}
+/* 과목 아이콘 */
+.sic{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;font-weight:800;font-size:16px;color:#fff;flex:none;box-shadow:0 4px 10px rgba(0,0,0,.08)}
+.s-kor{background:linear-gradient(135deg,#ff5f6d,#ff9a6b)}.s-math{background:linear-gradient(135deg,#5b8cff,#8f6bff)}.s-eng{background:linear-gradient(135deg,#16b98a,#4fd1c5)}
+.s-hist{background:linear-gradient(135deg,#f59e0b,#f97316)}.s-inq{background:linear-gradient(135deg,#a855f7,#ec4899)}.s-etc{background:linear-gradient(135deg,#64748b,#94a3b8)}
+/* 이름 아바타 */
+.sav{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:14px;flex:none;letter-spacing:-.03em;box-shadow:0 4px 10px rgba(0,0,0,.10)}
+.sav.lg{width:56px;height:56px;font-size:19px}
+/* 점수 · 등급 배지 */
+.gtag{display:inline-flex;align-items:baseline;gap:4px;padding:6px 12px;border-radius:12px;font-weight:800;font-size:17px;white-space:nowrap;line-height:1}
+.gtag small{font-size:11px;font-weight:600;opacity:.8}.gtag em{font-style:normal;font-size:12px;font-weight:700;margin-left:4px;padding:3px 7px;border-radius:8px;background:rgba(255,255,255,.65)}
+.gtag.g{background:var(--okt);color:var(--ok)}.gtag.b{background:var(--bluet);color:var(--blue)}.gtag.y{background:var(--midt);color:var(--mid)}.gtag.r{background:var(--redt);color:var(--red)}
+:root[data-theme=dark] .gtag em{background:rgba(0,0,0,.25)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .gtag em{background:rgba(0,0,0,.25)}}
+.tabs{background:color-mix(in srgb,var(--soft) 85%,transparent);border:1px solid var(--hair)}
+.tab.on,.seg button.on{background:var(--card);color:var(--red);box-shadow:0 3px 10px rgba(226,56,79,.12)}
+.invite{background:linear-gradient(135deg,var(--redt),color-mix(in srgb,var(--bluet) 60%,var(--redt)));border:1px solid var(--line)}
+.empty{border-radius:18px}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
