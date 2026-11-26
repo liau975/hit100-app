@@ -1292,7 +1292,8 @@ function aiForm(o = {}, lead = '') {
     const n = Math.max(1, Math.min(kind === 'set' ? 4 : 10, +$('ai-cnt').value || 1)), per = +$('ai-per').value || 3, note = $('ai-note').value.trim(), quality = $('ai-q').value, review = $('ai-rv').checked, sample = $('ai-sample').value.trim(); LS.set('hit100-aiq', quality); LS.set('hit100-airv', review ? '1' : '0');
     if (!type) { $('ai-msg').textContent = '유형을 입력하세요.'; return; }
     const btn = $('ai-go'); btn.disabled = true;
-    const jobs = kind === 'set' ? Array.from({length: n}, () => 1) : (() => { const a = []; let r = n; while (r > 0) { a.push(Math.min(5, r)); r -= 5; } return a; })();
+    const per1 = (lv === '최상' || lv === '상' || quality === 'best') ? 1 : 3; // 어려운 문제·최고 품질은 한 번에 한 문항씩 (답이 잘리지 않게)
+    const jobs = kind === 'set' ? Array.from({length: n}, () => 1) : (() => { const a = []; let r = n; while (r > 0) { a.push(Math.min(per1, r)); r -= per1; } return a; })();
     let done = 0, out = [], errs = [];
     const tick = () => { $('ai-msg').textContent = `만드는 중… ${done}/${jobs.length} (지문 → 문제 → 검토 순서라 2~4분 걸려요)`; }; tick();
     const snip = it => (it.passage_text || ((it.questions || [])[0] || {}).text || '').replace(/\s+/g, ' ').slice(0, 70);
