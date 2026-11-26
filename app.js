@@ -1395,19 +1395,20 @@ function vSheetView() {
       ${answers.some(x => x[2]) ? `<h3 style="margin-top:8mm">해설</h3><div class="pexp">${answers.filter(x => x[2]).map(([k, a, e]) => `<div><b>${k}. [정답 ${esc(a || '-')}]</b> ${esc(e)}</div>`).join('')}</div>` : ''}</div>` : ''}
   </div>`;
 }
-/* 문제 크게 보기: 시험지 모양 그대로 + 정답·해설 */
+/* 문제 다시 보기: AI로 처음 만들었을 때와 같은 모양 (지문 · 문항 · 정답 · 해설) */
 function vItemView() {
   const it = (S.items || []).find(x => x.id === S.p); if (!it) return '<div class="empty">문제를 찾을 수 없어요.</div>';
   const ids = S._bankIds || [], i = ids.indexOf(it.id), prev = i > 0 ? ids[i - 1] : null, next = i >= 0 && i < ids.length - 1 ? ids[i + 1] : null;
-  const qs = it.questions && it.questions.length ? it.questions : [{}], inCart = S.cart.includes(it.id), show = S.f.showAns;
-  const body = `${it.kind === 'set' ? `<div class="phead">[1${qs.length > 1 ? '～' + qs.length : ''}] 다음 글을 읽고 물음에 답하시오.</div>${it.passage_img ? `<img src="${esc(it.passage_img)}" alt="">` : ''}${it.passage_text ? passHtml(it.passage_text) : ''}` : ''}
-    ${qs.map((q, k) => `<div class="pq">${q.img ? `<b class="pn">${k + 1}.</b><img src="${esc(q.img)}" alt="">` : ''}${q.text ? qHtml(q.text, k + 1) : ''}
-      ${show ? `<div style="margin-top:2mm;padding:2mm 3mm;border-left:3px solid #d8344a;background:#fff5f6;font-size:9.5pt"><b>정답 ${esc(q.answer || '-')}</b>${q.explain ? `<div style="white-space:pre-wrap;margin-top:1mm">${esc(q.explain)}</div>` : ''}</div>` : ''}</div>`).join('')}`;
-  return `<div class="top noprint"><div><button class="btn o s" data-act="nav" data-v="bank">← 문제은행</button>
-    <div class="row" style="gap:6px;margin-top:10px"><span class="tag b">${esc(SUBJECTS[it.subject] || '')}${it.subname ? ' ' + esc(it.subname) : ''}</span>${it.type ? `<span class="tag">${esc(it.type)}</span>` : ''}${it.level ? `<span class="lv ${it.level}">${it.level}</span>` : ''}${it.source ? `<span class="small">${esc(it.source)}</span>` : ''}</div></div>
-    <div class="row"><button class="btn o s" data-act="showAns">${show ? '정답 숨기기' : '정답·해설 보기'}</button><button class="btn s ${inCart ? '' : 'r'}" data-act="cartToggle" data-id="${it.id}">${inCart ? '담김 ✓' : '담기'}</button><button class="btn o s" data-act="editItem" data-id="${it.id}">수정</button><button class="btn o s" data-act="delItem" data-id="${it.id}">삭제</button></div></div>
-  <div class="paper" style="min-height:0"><div class="pbody c1" style="margin-top:0">${body}</div></div>
-  <div class="row noprint" style="justify-content:space-between;max-width:210mm;margin:14px auto 0">${prev ? `<button class="btn o" data-act="viewItem" data-id="${prev}">← 이전 문제</button>` : '<span></span>'}${next ? `<button class="btn o" data-act="viewItem" data-id="${next}">다음 문제 →</button>` : ''}</div>`;
+  const qs = it.questions && it.questions.length ? it.questions : [], inCart = S.cart.includes(it.id);
+  const qBlock = (q, n) => `<div style="margin-top:14px">${q.img ? `<img src="${esc(q.img)}" alt="" style="max-width:100%;border-radius:8px;background:#fff">` : ''}${q.text ? `<div style="white-space:pre-wrap;line-height:1.7"><b>${n}.</b> ${esc(q.text)}</div>` : ''}
+    <div style="margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--soft);border-left:3px solid var(--red)"><b>정답 ${esc(q.answer || '-')}</b>${q.explain ? `<div class="small" style="white-space:pre-wrap;margin-top:4px;color:var(--ink)">${esc(q.explain)}</div>` : ''}</div></div>`;
+  return `<div class="top"><div><button class="btn o s" data-act="nav" data-v="bank">← 문제은행</button><h1 style="margin-top:10px">${esc(it.type || '문제')}</h1><div class="small">${esc(it.source || '')}</div></div>
+    <div class="row"><button class="btn ${inCart ? 'o' : 'r'}" data-act="cartToggle" data-id="${it.id}">${inCart ? '담김 ✓' : '시험지에 담기'}</button><button class="btn o" data-act="editItem" data-id="${it.id}">수정</button><button class="btn o" data-act="delItem" data-id="${it.id}">삭제</button></div></div>
+  <div class="card"><div class="row" style="gap:6px"><span class="tag b">${esc(SUBJECTS[it.subject] || '')}${it.subname ? ' ' + esc(it.subname) : ''}</span>${it.type ? `<span class="tag">${esc(it.type)}</span>` : ''}${it.level ? `<span class="lv ${it.level}">${it.level}</span>` : ''}<span class="tag">${it.kind === 'set' ? '지문 세트 · ' + qs.length + '문항' : '단일'}</span></div>
+    ${it.passage_img ? `<img src="${esc(it.passage_img)}" alt="" style="max-width:100%;margin-top:12px;border-radius:8px;background:#fff">` : ''}
+    ${it.passage_text ? `<div style="white-space:pre-wrap;margin-top:12px;padding:14px;border:1px solid var(--hair);border-radius:10px;background:var(--soft);font-size:15px;line-height:1.8">${esc(it.passage_text)}</div>` : ''}
+    ${qs.map((q, k) => qBlock(q, k + 1)).join('') || '<p class="small">문항이 없어요.</p>'}</div>
+  <div class="row" style="justify-content:space-between;margin-top:14px">${prev ? `<button class="btn o" data-act="viewItem" data-id="${prev}">← 이전 문제</button>` : '<span></span>'}${next ? `<button class="btn o" data-act="viewItem" data-id="${next}">다음 문제 →</button>` : ''}</div>`;
 }
 /* 학생 맞춤 시험지: 취약 유형별로 문제를 골라 담는다 */
 function makeClinicSheet(sid, subj) {
@@ -1564,7 +1565,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.0 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.1 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
@@ -1620,7 +1621,6 @@ const ACT = {
   tsub: el => { S.f.tsub = el.dataset.v; render(); },
   impExam: () => impForm(),
   viewItem: el => go('itemView', el.dataset.id),
-  showAns: () => { S.f.showAns = !S.f.showAns; render(); },
   impSave: async () => { const res = S.impRes || [], ids = [...(S.impPick || [])]; let n = 0;
     for (const i of ids) { const r = res[i]; if (!r || !r.exam) continue; try { await save('exams', impBuild(r)); n++; } catch (e) {} }
     toast(`${n}개 시험을 저장했어요`); S.impRes = null; go('exams'); },
