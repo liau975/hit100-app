@@ -190,6 +190,8 @@ const IDB = {db: null,
   set(k, v) { if (!this.db) return; try { this.db.transaction('kv', 'readwrite').objectStore('kv').put(JSON.parse(JSON.stringify(v)), k); } catch (e) { toast('저장하지 못했어요: ' + e.message); } }
 };
 const LB = {
+  async shareReport() { throw '데모 모드에선 학부모 링크를 만들 수 없어요.'; },
+  async getReport() { throw '데모 모드예요.'; },
   async importExam() { throw '데모 모드에선 자동 가져오기를 쓸 수 없어요.'; },
   async school() { throw '데모 모드에선 학교 인증을 쓸 수 없어요.'; },
   async ranking() { return []; },
@@ -282,6 +284,8 @@ const SB = {
   async delPost(id) { this.chk(await sb.from('posts').delete().eq('id', id)); },
   async delComment(id) { this.chk(await sb.from('comments').delete().eq('id', id)); },
   async like(pid, on) { if (on) this.chk(await sb.from('post_likes').insert({post_id: pid})); else this.chk(await sb.from('post_likes').delete().eq('post_id', pid).eq('user_id', S.user.id)); },
+  async shareReport(row) { this.chk(await sb.from('report_shares').insert(row)); },
+  async getReport(token) { return this.chk(await sb.rpc('get_report', {p_token: token})); },
   async importExam(body) { return await this.genRaw({...body, action: 'exam'}); },
   async genRaw(body) {
     const {data, error} = await sb.functions.invoke('gen-items', {body});
@@ -356,6 +360,8 @@ function seedDemo(aid) {
 
 /* ---------- 부팅 ---------- */
 async function boot() {
+  const rt = new URLSearchParams(location.search).get('r');
+  if (rt) { try { await API.init(); } catch (e) { return renderFatal(e); } return renderPublicReport(rt); }
   try { await API.init(); S.user = await API.session(); } catch (e) { return renderFatal(e); }
   if (S.recovery) return renderAuth('newpw');
   if (!S.user) return renderAuth('in');
@@ -519,7 +525,7 @@ const DEFAULT_PERMS = {
 function permsFor(title) { const st = ((S.academy || {}).settings || {}).perms || {}; return {...(DEFAULT_PERMS[title] || DEFAULT_PERMS.선생님), ...(st[title] || {})}; }
 function can(k) { if (!S.member) return false; if (S.member.role === 'student') return false; if (S.member.role === 'owner') return true; return !!permsFor(roleName(S.member))[k]; }
 const ACT_PERM = {newStudent: 'student_edit', editStudent: 'student_edit', delStudent: 'student_delete', assign: 'student_edit', newExam: 'exam_edit', editExam: 'exam_edit', delExam: 'exam_delete', saveExam: 'exam_edit',
-  gradeStudent: 'grade', gradeExam: 'grade', gradePlanned: 'grade', editAttempt: 'grade', gSave: 'grade', delAttempt: 'attempt_delete', newItem: 'bank_edit', impExam: 'exam_edit', impSave: 'exam_edit', bulkAdd: 'bank_edit', aiGen: 'bank_edit', aiSave: 'bank_edit', aiSaveCart: 'bank_edit', editItem: 'bank_edit', saveItem: 'bank_edit', saveItemNext: 'bank_edit', delItem: 'bank_delete',
+  gradeStudent: 'grade', gradeExam: 'grade', gradePlanned: 'grade', editAttempt: 'grade', gSave: 'grade', delAttempt: 'attempt_delete', newItem: 'bank_edit', impExam: 'exam_edit', autoTypes: 'exam_edit', impSave: 'exam_edit', bulkAdd: 'bank_edit', aiGen: 'bank_edit', aiSave: 'bank_edit', aiSaveCart: 'bank_edit', editItem: 'bank_edit', saveItem: 'bank_edit', saveItemNext: 'bank_edit', delItem: 'bank_delete',
   noteCause: 'grade', copyCode: 'manage_members', genLink: 'student_edit', openCart: 'sheet', cartToggle: 'sheet', clinicSheet: 'sheet', editSheet: 'sheet', delSheet: 'sheet', sheetSave: 'sheet', sheetPreview: 'sheet', mKick: 'manage_members', saveAcademy: 'academy_settings', bkCopy: 'backup', bkLoad: 'backup', leaveAcad: null};
 const actAllowed = el => { const a = el.dataset.act; if (a === 'nav' && el.dataset.v === 'grade') return can('grade'); const p = ACT_PERM[a]; return !p || can(p); };
 const visibleStudents = () => can('all_students') ? S.students : S.students.filter(s => (s.teacher_ids || []).includes(S.user.id) || s.created_by === S.user.id);
@@ -754,7 +760,7 @@ function vExam() {
     <div class="kv"><span>등급</span><b>${e.grading === 'none' ? '등급 없음' : (e.grading === 'absolute' ? '절대평가 · ' : '상대평가 · ') + (c.some(x => x > 0) ? c.map((v, i) => `${i + 1}등급 ${v}`).join(' · ') : '등급컷 미입력')}</b></div><div class="kv"><span>출처</span><b>${esc(e.source || '-')}</b></div></div>
     <h3>정답</h3><div class="grid">${Array.from({length: QN(e)}, (_, i) => { const q = i + 1, k = keyOf(e, tr, q), p = pts(e, tr, q); return `<div class="q ${p > e.defPts ? 't' : ''}">${q}<small>${k === null ? '-' : fmtAns(e, tr, q, k)}</small>${p > e.defPts ? `<i>${p}</i>` : ''}</div>`; }).join('')}</div>`;
   }
-  return `<div class="top"><div><button class="btn o s" data-act="nav" data-v="exams">← 시험 목록</button><h1 style="margin-top:10px">${esc(e.title)}</h1><div class="small">${esc(examSubj(e))} · ${e.academy_id ? '우리 학원 시험' : '공용 시험'}</div></div>
+  return `<div class="top"><div><button class="btn o s" data-act="nav" data-v="exams">← 시험 목록</button><h1 style="margin-top:10px">${esc(e.title)}</h1><div class="small">${esc(examSubj(e))} · ${e.academy_id ? '우리 학원 시험' : '공용 시험'}</div>${canEditExam(e) && !DEMO && can('exam_edit') && TAXO[e.subject] && TAXO[e.subject].length ? `<button class="btn o s" data-act="autoTypes" data-id="${e.id}" style="margin-top:8px">✨ 문항별 유형 자동 채우기</button>` : ''}</div>
   <div class="row"><button class="btn r s" data-act="gradeExam" data-id="${e.id}">이 시험으로 채점</button>${canEditExam(e) ? `<button class="btn o s" data-act="editExam" data-id="${e.id}">수정</button><button class="btn o s" data-act="delExam" data-id="${e.id}">삭제</button>` : ''}</div></div>
   <div class="tabs">${[['ana', '문항 분석'], ['info', '정답 · 배점 · 등급컷']].map(([k, l]) => `<button class="tab ${tab === k ? 'on' : ''}" data-act="tab" data-v="${k}">${l}</button>`).join('')}</div>${body}`;
 }
@@ -939,13 +945,54 @@ function vReport() {
   const a = S.attempts.find(x => x.id === S.p), r = a && evalAttempt(a); if (!r) return '<div class="empty">보고서를 찾을 수 없어요.</div>';
   const st = examStats(r.e);
   return `<div class="top noprint"><div><button class="btn o s" data-act="openStudent" data-id="${a.student_id}">← 학생 페이지</button></div>
-  <div class="row"><button class="btn r s" data-act="copyReport" data-id="${a.id}">텍스트 복사</button><button class="btn o s" data-act="print">인쇄</button><button class="btn o s" data-act="editAttempt" data-id="${a.id}">채점 수정</button><button class="btn o s" data-act="delAttempt" data-id="${a.id}">삭제</button></div></div>
+  <div class="row">${DEMO ? '' : `<button class="btn r s" data-act="shareReport" data-id="${a.id}">📩 학부모 링크</button>`}<button class="btn ${DEMO ? 'r' : 'o'} s" data-act="copyReport" data-id="${a.id}">텍스트 복사</button><button class="btn o s" data-act="print">인쇄</button><button class="btn o s" data-act="editAttempt" data-id="${a.id}">채점 수정</button><button class="btn o s" data-act="delAttempt" data-id="${a.id}">삭제</button></div></div>
   <div class="report"><div class="title">클리닉 보고 (모의고사 편)</div><table>${reportFields(a, r).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table><div class="foot">${esc(S.academy.name)}</div></div>
   ${(() => { const tc = {}; r.wrong.forEach(q => { const t = typeOf(r.e, r.tr, q); tc[t] = (tc[t] || 0) + 1; }); const arr = Object.entries(tc).sort((a, b) => b[1] - a[1]); return arr.length ? `<h2>유형별 오답</h2><div class="row">${arr.map(([t, n]) => `<span class="tag r">${esc(t)} ${n}</span>`).join('')}</div><div class="row noprint" style="margin-top:10px"><button class="btn r s" data-act="clinicSheet" data-id="${a.student_id}" data-sub="${r.e.subject}">${icon('file', 16)}이 학생 맞춤 시험지 만들기</button></div>` : ''; })()}
   <h2>전체 오답 (${r.wrong.length}문항)</h2>
   ${r.wrong.length ? `<div class="scroll tbl"><table><thead><tr><th>번호</th><th>영역</th><th class="n">배점</th><th>난이도</th><th class="n">정답</th><th class="n">학생 답</th><th>원인 · 메모</th></tr></thead><tbody>
   ${r.wrong.map(q => { const d = diff(r.e, r.tr, q, st), n = (a.notes || {})[q] || {}, k = keyOf(r.e, r.tr, q);
     return `<tr><td>${q}${(a.picks || []).includes(q) ? ' ★' : ''}</td><td>${esc(areaOf(r.e, r.tr, q))}</td><td class="n">${pts(r.e, r.tr, q)}</td><td>${lvBadge(d)}</td><td class="n">${k === null ? '-' : esc(fmtAns(r.e, r.tr, q, k))}</td><td class="n">${a.mode === 'answers' ? esc(fmtAns(r.e, r.tr, q, (a.answers || [])[q-1])) : '-'}</td><td>${esc([(n.causes || []).join(', '), n.memo].filter(Boolean).join(' · ')) || '-'}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="empty">만점이에요!</div>'}`;
+}
+
+/* ---------- 학부모 리포트 링크 ---------- */
+function reportSnapshot(a) {
+  const r = evalAttempt(a), s = stuById(a.student_id) || {name: '학생'}, st = examStats(r.e);
+  const tc = {}; r.wrong.forEach(q => { const t = typeOf(r.e, r.tr, q); tc[t] = (tc[t] || 0) + 1; });
+  const trend = doneOf(a.student_id).map(x => ({x, rr: evalAttempt(x)})).filter(o => o.rr && o.rr.e.subject === r.e.subject).slice(-8)
+    .map(o => ({title: o.rr.e.title, date: o.x.taken_date, score: o.rr.score, max: o.rr.e.max, g: o.rr.g || null, me: o.x.id === a.id}));
+  return {v: 1, student: s.name, school: s.school || '', grade: s.grade || '', exam: r.e.title, subject: examSubj(r.e) + (r.tr !== 'all' ? ` (${trackName(r.e, r.tr)})` : ''),
+    date: a.taken_date, score: r.score, max: r.e.max, g: r.g || null, total: QN(r.e), nwrong: r.wrong.length, attitude: a.attitude || '',
+    areas: r.areas.map(x => ({n: x.n, total: x.total, c: x.c})), types: Object.entries(tc).sort((x, y) => y[1] - x[1]).map(([t, n]) => ({t, n})),
+    wrong: r.wrong.map(q => { const k = keyOf(r.e, r.tr, q), d = diff(r.e, r.tr, q, st), n = (a.notes || {})[q] || {};
+      return {q, area: areaOf(r.e, r.tr, q), type: typeOf(r.e, r.tr, q), pts: pts(r.e, r.tr, q), lv: d.lv === 'n' ? '' : d.lv, key: k === null ? '' : fmtAns(r.e, r.tr, q, k), ans: a.mode === 'answers' ? fmtAns(r.e, r.tr, q, (a.answers || [])[q - 1]) : '', memo: [(n.causes || []).join(', '), n.memo].filter(Boolean).join(' · '), star: (a.picks || []).includes(q)}; }),
+    trend, comment: a.comment || ''};
+}
+function trendSvg(t) {
+  if (t.length < 2) return '';
+  const W = 560, H = 150, P = 28, max = Math.max(...t.map(x => x.max || 100)), xs = i => P + i * (W - 2 * P) / (t.length - 1), ys = v => H - P - (v / max) * (H - 2 * P);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto"><polyline fill="none" stroke="#d8344a" stroke-width="3" points="${t.map((x, i) => xs(i) + ',' + ys(x.score)).join(' ')}"/>
+    ${t.map((x, i) => `<circle cx="${xs(i)}" cy="${ys(x.score)}" r="${x.me ? 7 : 5}" fill="${x.me ? '#d8344a' : '#fff'}" stroke="#d8344a" stroke-width="2.5"/><text x="${xs(i)}" y="${ys(x.score) - 12}" text-anchor="middle" font-size="13" font-weight="700" fill="#333">${x.score}</text><text x="${xs(i)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="#888">${esc(String(x.date || '').slice(5).replace('-', '/'))}</text>`).join('')}</svg>`;
+}
+async function renderPublicReport(token) {
+  document.documentElement.removeAttribute('data-theme');
+  root.innerHTML = '<div class="pubr"><p class="small" style="text-align:center;padding:60px 0">보고서를 불러오는 중…</p></div>';
+  let d; try { d = await API.getReport(token); } catch (e) { d = null; }
+  if (!d) { root.innerHTML = '<div class="pubr"><div class="card" style="text-align:center;padding:40px"><h2>보고서를 찾을 수 없어요</h2><p class="small">링크가 잘못됐거나 기간(120일)이 지났어요. 학원에 새 링크를 요청해 주세요.</p></div></div>'; return; }
+  const pct = Math.round(d.score / (d.max || 100) * 100), worst = (d.areas || []).filter(x => x.c).sort((x, y) => y.c / y.total - x.c / x.total)[0];
+  root.innerHTML = `<div class="pubr">
+  <div class="pub-hero"><div class="pub-brand"><img src="icon-192.png" alt=""><span>${esc(d.academy || '')}</span></div>
+    <div class="pub-name">${esc(d.student)} 학생 <span>모의고사 리포트</span></div>
+    <div class="pub-exam">${esc(d.exam)} · ${esc(d.subject)} · ${esc(fmtDate(d.date))}</div>
+    <div class="pub-score"><div class="ring" style="--p:${pct}"><div><b>${d.score}</b><span>/ ${d.max}점</span></div></div>
+      <div class="pub-kpi">${d.g ? `<div><b>${d.g}</b><span>등급</span></div>` : ''}<div><b>${d.total - d.nwrong}</b><span>맞은 문항 / ${d.total}</span></div><div><b>${d.nwrong}</b><span>틀린 문항</span></div></div></div></div>
+  ${d.comment ? `<div class="card pub-note"><h3>선생님 한마디</h3><p>${esc(d.comment)}</p></div>` : ''}
+  <div class="card"><h3>영역별 결과</h3>${(d.areas || []).map(x => { const ok = x.total - x.c, w = Math.round(ok / x.total * 100); return `<div class="pub-bar"><span>${esc(x.n)}</span><div><i style="width:${w}%"></i></div><b>${ok}/${x.total}</b></div>`; }).join('')}
+    ${worst ? `<p class="small" style="margin:10px 0 0">가장 보완이 필요한 영역은 <b>${esc(worst.n)}</b>이에요.</p>` : ''}</div>
+  ${(d.types || []).length ? `<div class="card"><h3>틀린 유형</h3><div class="row" style="gap:6px">${d.types.map(x => `<span class="tag r">${esc(x.t)} ${x.n}</span>`).join('')}</div></div>` : ''}
+  ${(d.trend || []).length > 1 ? `<div class="card"><h3>점수 변화</h3>${trendSvg(d.trend)}</div>` : ''}
+  ${(d.wrong || []).length ? `<div class="card"><h3>틀린 문항</h3><div class="scroll tbl"><table><thead><tr><th>번호</th><th>영역 · 유형</th><th>난이도</th><th class="n">정답</th><th class="n">학생 답</th>${d.wrong.some(w => w.memo) ? '<th>원인 · 메모</th>' : ''}</tr></thead><tbody>
+    ${d.wrong.map(w => `<tr><td><b>${w.q}</b>${w.star ? ' ★' : ''}</td><td>${esc(w.type && w.type !== w.area ? w.type : w.area)}</td><td>${w.lv ? `<span class="lv ${w.lv}">${w.lv}</span>` : '–'}</td><td class="n">${esc(w.key || '-')}</td><td class="n">${esc(w.ans || '-')}</td>${d.wrong.some(x => x.memo) ? `<td>${esc(w.memo)}</td>` : ''}</tr>`).join('')}</tbody></table></div></div>` : ''}
+  <p class="small" style="text-align:center;margin:18px 0 30px">${esc(d.academy || '')} · hit100으로 만든 리포트예요</p></div>`;
 }
 
 /* ---------- 유형 체계 · 취약 유형 ---------- */
@@ -1106,7 +1153,7 @@ function impForm() {
     let done = 0; const tick = () => { $('im-msg').textContent = `정답표 찾는 중… ${done}/${subs.length} (과목당 1~2분)`; }; tick();
     const out = await Promise.all(subs.map(subj => {
       const sections = impSections(subj, grade, year);
-      return API.importExam({academy_id: S.academy.id, label: impLabel(kind, month, year, grade), subjectName: SUBJECTS[subj], sections,
+      return API.importExam({academy_id: S.academy.id, label: impLabel(kind, month, year, grade), subjectName: SUBJECTS[subj], sections, taxo: TAXO[subj] || [],
         shortNote: subj === 'math' ? (grade === 3 && impOld(year) ? '이 해는 가형·나형으로 나뉜 시험이다. 두 형 모두 1~30번이고 단답형(22~30번)은 정수다. 4점 문항도 p4에 적는다.' : '수학 단답형(공통 16~22번, 선택 29~30번 등)은 정답이 정수다. 4점 문항도 p4에 적는다.') : subj === 'kor' && impOld(year) ? '이 해는 국어 선택과목이 없는 45문항 단일 시험이다.' : subj === 'eng' ? '영어 듣기 1~17번 포함 45문항.' : ''})
         .then(r => ({subj, kind, month, year, grade, sections, ...r})).catch(e => ({subj, kind, month, year, grade, sections, error: String(e)})).finally(() => { done++; tick(); });
     }));
@@ -1125,6 +1172,7 @@ function impBuild(r) {
   e.academy_id = S.isAdmin && S.f.impPublic !== false ? null : S.academy.id;
   e.key = {}; r.sections.forEach(sc => { e.key[sc.id] = (x.sections && x.sections[sc.id] || []).slice(0, sc.to - sc.from + 1).map(v => v === null || v === undefined ? '' : Number(v)); });
   ['p3', 'p4'].forEach(k => { if (x[k] && Object.keys(x[k]).length) e[k] = Object.fromEntries(r.sections.map(sc => [sc.id, (x[k][sc.id] || []).map(Number)])); });
+  if (x.types) e.types = Object.fromEntries(r.sections.map(sc => [sc.id, (x.types[sc.id] || []).slice(0, sc.to - sc.from + 1).map(t => String(t || ''))]));
   e.source = 'AI 자동 수집 · ' + (x.agree ? '두 곳 이상 대조' : '대조 불완전') + ' · ' + (x.sources || []).map(s => s.url).slice(0, 3).join(' , ');
   return e;
 }
@@ -1565,7 +1613,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.1 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.2 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
@@ -1611,6 +1659,20 @@ const ACT = {
   editAttempt: el => { const a = S.attempts.find(x => x.id === el.dataset.id); go('grade', {g: newDraft(a)}); },
   delAttempt: el => confirmBox('이 기록을 삭제할까요?', async () => { const a = S.attempts.find(x => x.id === el.dataset.id); await del('attempts', el.dataset.id); toast('삭제했어요'); if (S.view === 'report') go('student', a.student_id); else render(); }),
   openReport: el => go('report', el.dataset.id),
+  shareReport: el => { const a = S.attempts.find(x => x.id === el.dataset.id); if (!a) return; const s = stuById(a.student_id) || {};
+    modal(`<h2 style="margin:0">📩 학부모 링크 만들기</h2><p class="small" style="margin:0">${esc(s.name || '')} 학생의 이 보고서를 로그인 없이 볼 수 있는 링크로 만들어요. 점수·영역별 결과·틀린 유형·점수 변화·틀린 문항이 예쁘게 정리돼요.</p>
+      <label>선생님 한마디 (선택)<textarea id="sh-cmt" placeholder="예: 독서 과학 제재에서 시간이 부족했어요. 다음 주 클리닉에서 집중 보완합니다." style="min-height:90px">${esc(a.comment || '')}</textarea></label>
+      <div class="row"><button class="btn r" id="sh-go">링크 만들기</button><button class="btn o" data-act="closeModal">취소</button></div>`);
+    document.getElementById('sh-go').onclick = async () => {
+      const snap = reportSnapshot(a); snap.comment = document.getElementById('sh-cmt').value.trim();
+      const tok = Array.from(crypto.getRandomValues(new Uint8Array(18)), b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
+      try { await API.shareReport({token: tok, academy_id: S.academy.id, attempt_id: a.id, student_id: a.student_id, snapshot: snap}); } catch (e) { toast('링크를 만들지 못했어요: ' + e); return; }
+      const url = location.origin + location.pathname + '?r=' + tok; closeModal();
+      modal(`<h2 style="margin:0">📩 학부모 링크</h2><p class="small" style="margin:0">받은 사람은 로그인 없이 이 보고서만 볼 수 있어요 (120일). 지금 내용으로 고정된 사본이라, 채점을 고치면 새로 만들어 주세요.</p>
+        <input value="${esc(url)}" readonly onclick="this.select()"><div class="row"><button class="btn r" id="sh-copy">링크 복사</button>${navigator.share ? '<button class="btn o" id="sh-share">카톡·문자로 보내기</button>' : ''}<a class="btn o" href="${esc(url)}" target="_blank" rel="noopener">미리 보기</a><button class="btn o" data-act="closeModal">닫기</button></div>`);
+      document.getElementById('sh-copy').onclick = () => copyText(url);
+      const sh = document.getElementById('sh-share'); if (sh) sh.onclick = () => navigator.share({title: `${s.name || ''} 모의고사 리포트`, text: `${S.academy.name} ${s.name || ''} 학생 모의고사 리포트입니다.`, url}).catch(() => {});
+    }; },
   copyReport: el => { const a = S.attempts.find(x => x.id === el.dataset.id), r = evalAttempt(a); copyText('[클리닉 보고 (모의고사 편)]\n' + reportFields(a, r).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n' + S.academy.name); },
   print: () => { try { window.print(); } catch (e) { toast('인쇄를 열 수 없어요'); } },
   noteCause: async el => { const a = S.attempts.find(x => x.id === el.dataset.a), q = el.dataset.q, c = el.dataset.c, n = a.notes || (a.notes = {}), o = n[q] || (n[q] = {});
@@ -1620,6 +1682,13 @@ const ACT = {
   esub: el => { S.f.esub = el.dataset.v; render(); },
   tsub: el => { S.f.tsub = el.dataset.v; render(); },
   impExam: () => impForm(),
+  autoTypes: async el => { const e = S.exams.find(x => x.id === el.dataset.id); if (!e) return; el.disabled = true; el.textContent = '유형 찾는 중… (1~2분)';
+    const c = commonLen(e), q = QN(e), secs = isSplit(e) ? [...(c ? [{id: 'common', name: '공통', from: 1, to: c}] : []), ...e.layout.tracks.map(t => ({id: t.id, name: t.name, from: c + 1, to: q}))] : [{id: 'common', name: examSubj(e) + ' 전체', from: 1, to: q}];
+    try { const r = await API.importExam({academy_id: S.academy.id, label: e.title + ` (${e.year}년 ${e.month}월 시행, 고${e.grade})`, subjectName: examSubj(e), sections: secs, taxo: TAXO[e.subject] || [], want: 'types'});
+      const x = r.exam || {}; if (!x.types || !Object.keys(x.types).length) throw (x.note || '유형 정보를 찾지 못했어요');
+      const types = {...(e.types || {})}; secs.forEach(sc => { const arr = (x.types[sc.id] || []).slice(0, sc.to - sc.from + 1); if (arr.some(Boolean)) types[sc.id] = arr.map((t, i) => t || ((e.types || {})[sc.id] || [])[i] || ''); });
+      await save('exams', {...e, types}); toast('문항별 유형을 채웠어요. 시험 수정에서 확인할 수 있어요'); render(); }
+    catch (err) { toast('실패: ' + err); el.disabled = false; el.textContent = '✨ 문항별 유형 자동 채우기'; } },
   viewItem: el => go('itemView', el.dataset.id),
   impSave: async () => { const res = S.impRes || [], ids = [...(S.impPick || [])]; let n = 0;
     for (const i of ids) { const r = res[i]; if (!r || !r.exam) continue; try { await save('exams', impBuild(r)); n++; } catch (e) {} }

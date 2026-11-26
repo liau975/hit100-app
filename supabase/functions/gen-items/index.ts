@@ -282,6 +282,7 @@ const EXAM_TOOL = {
       p4: { type: "object", description: "구역 id → 4점 문항 번호 배열 (수학만)", additionalProperties: { type: "array", items: { type: "integer" } } },
       sources: { type: "array", items: { type: "object", properties: { url: { type: "string" }, title: { type: "string" } }, required: ["url"] } },
       agree: { type: "boolean", description: "서로 다른 두 곳 이상의 출처에서 모든 정답이 일치했으면 true" },
+      types: { type: "object", description: "구역 id → 그 구역 문항별 유형 배열(구역 첫 문항부터 순서대로). 주어진 유형 목록에서 고른다. 모르면 빈 문자열", additionalProperties: { type: "array", items: { type: "string" } } },
       note: { type: "string", description: "불확실한 점, 출처끼리 달랐던 문항, 가답안 여부 등" },
     },
     required: ["found", "sections", "sources", "agree"],
@@ -309,6 +310,8 @@ async function importExam(key: string, b: any) {
     `과목: ${b.subjectName}${b.subname ? " " + b.subname : ""}`,
     `구역 구성 (sections의 키로 이 id를 그대로 쓴다):\n${secDesc}`,
     b.shortNote ? `참고: ${b.shortNote}` : "",
+    Array.isArray(b.taxo) && b.taxo.length ? `문항별 유형(types)도 채운다. EBSi 문항 분석·해설지에서 각 문항이 어떤 제재·갈래·단원인지 확인해서 이 목록에서 고른다: ${b.taxo.slice(0, 60).join(", ")}` : "",
+    b.want === "types" ? "이번 요청은 문항별 유형(types)만 필요하다. sections는 빈 객체로 두고 found는 유형을 찾았으면 true." : "",
   ].filter(Boolean).join("\n");
 
   const tools: any[] = [{ type: "web_search_20250305", name: "web_search", max_uses: 8 }, { type: "web_fetch_20250910", name: "web_fetch", max_uses: 6 }, EXAM_TOOL];

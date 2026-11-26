@@ -206,6 +206,20 @@ td.n,th.n{text-align:right;white-space:nowrap}
 .drop{border:2px dashed var(--line);border-radius:14px;min-height:140px;display:grid;place-items:center;text-align:center;padding:12px;cursor:pointer;background:var(--soft);color:var(--mut);font-size:14px}
 .drop.on{border-color:var(--red);background:var(--redt);color:var(--red)}
 .drop img{max-width:100%;max-height:420px;border-radius:8px;background:#fff}
+/* 학부모 리포트 (공개 링크) */
+.pubr{max-width:720px;margin:0 auto;padding:16px;display:grid;gap:14px}
+.pub-hero{background:linear-gradient(135deg,#ff5f6d,#ff9a6b);color:#fff;border-radius:22px;padding:22px;box-shadow:0 14px 40px rgba(216,52,74,.28)}
+.pub-hero *{color:#fff}.pub-brand{display:flex;align-items:center;gap:8px;font-size:13px;opacity:.95}.pub-brand img{width:26px;height:26px;border-radius:8px;background:#fff}
+.pub-name{font-size:24px;font-weight:800;margin-top:14px}.pub-name span{font-size:15px;font-weight:600;opacity:.9;margin-left:6px}
+.pub-exam{font-size:13px;opacity:.92;margin-top:4px}
+.pub-score{display:flex;align-items:center;gap:22px;margin-top:18px;flex-wrap:wrap}
+.ring{--p:0;width:120px;height:120px;border-radius:50%;background:conic-gradient(#fff calc(var(--p)*1%),rgba(255,255,255,.28) 0);display:grid;place-items:center}
+.ring>div{width:94px;height:94px;border-radius:50%;background:rgba(216,52,74,.55);display:grid;place-items:center;text-align:center;line-height:1.1}
+.ring b{font-size:34px;font-weight:800;display:block}.ring span{font-size:12px;opacity:.9}
+.pub-kpi{display:flex;gap:18px}.pub-kpi div{display:grid}.pub-kpi b{font-size:26px;font-weight:800}.pub-kpi span{font-size:12px;opacity:.9}
+.pub-bar{display:grid;grid-template-columns:110px 1fr 52px;align-items:center;gap:10px;margin:8px 0;font-size:14px}
+.pub-bar div{height:10px;border-radius:99px;background:var(--soft);overflow:hidden}.pub-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#ff5f6d,#ff9a6b)}.pub-bar b{text-align:right}
+.pub-note{border-left:4px solid var(--red)}.pub-note p{margin:0;white-space:pre-wrap;line-height:1.7}
 /* 시험지 (수능 시험지 스타일) */
 .paper{--ink:#111;background:#fff;color:#111;width:100%;max-width:210mm;min-height:297mm;margin:0 auto;padding:14mm 13mm 16mm;box-shadow:0 4px 24px rgba(0,0,0,.18);border-radius:2px;font-family:"Noto Serif KR","Nanum Myeongjo","AppleMyungjo","Batang",serif;font-size:10.5pt;line-height:1.62;word-break:keep-all;overflow-wrap:break-word}
 .paper *{color:#111}
