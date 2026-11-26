@@ -1074,10 +1074,13 @@ function bulkForm() {
   };
 }
 /* ---------- 시험 자동 가져오기 (웹에서 공식 정답표 찾기) ---------- */
-const IMP_KINDS = [['수능', 11, [3]], ['모평', 6, [3]], ['모평', 9, [3]], ['학평', 3, [1, 2, 3]], ['학평', 5, [3]], ['학평', 6, [1, 2]], ['학평', 7, [3]], ['학평', 9, [1, 2]], ['학평', 10, [1, 2, 3]], ['학평', 11, [1, 2]]];
+const IMP_KINDS = [['수능', 11, [3]], ['모평', 6, [3]], ['모평', 9, [3]], ['학평', 3, [1, 2, 3]], ['학평', 4, [3]], ['학평', 5, [3]], ['학평', 6, [1, 2]], ['학평', 7, [3]], ['학평', 9, [1, 2]], ['학평', 10, [1, 2, 3]], ['학평', 11, [1, 2]]];
 const impLabel = (kind, month, year, grade) => kind === '수능' ? `${year + 1}학년도 대학수학능력시험 (${year}년 11월 시행)` : kind === '모평' ? `${year + 1}학년도 ${month}월 모의평가 (${year}년 ${month}월 시행, 평가원)` : `${year}년 ${month}월 고${grade} 전국연합학력평가 (교육청)`;
 const impTitle = (kind, month, year, grade, subj) => (kind === '수능' ? `${year + 1}학년도 수능` : kind === '모평' ? `${year + 1}학년도 ${month}월 모평` : `${year}년 ${month}월 고${grade} 학평`) + ' ' + SUBJECTS[subj];
-function impSections(subj, grade) {
+const impOld = year => year <= 2020; // 2021년 시행(2022학년도)부터 국어·수학 선택과목 체제
+function impSections(subj, grade, year) {
+  if (subj === 'kor' && (grade < 3 || impOld(year))) return [{id: 'common', name: '국어 전체', from: 1, to: 45}];
+  if (subj === 'math' && grade === 3 && impOld(year)) return [{id: 'ga', name: '수학 가형', from: 1, to: 30}, {id: 'na', name: '수학 나형', from: 1, to: 30}];
   const t = template(subj), c = t.layout.common, q = t.layout.qcount, names = {hj: '화법과 작문', em: '언어와 매체', pr: '확률과 통계', ca: '미적분', ge: '기하'};
   if (subj === 'kor' && grade < 3) return [{id: 'common', name: '국어 전체', from: 1, to: 45}];
   if (subj === 'math' && grade < 3) return [{id: 'common', name: '수학 전체', from: 1, to: 30}];
@@ -1088,9 +1091,10 @@ function impForm() {
   modal(`<h2 style="margin:0">✨ 시험 자동 가져오기</h2>
   <p class="small" style="margin:0">AI가 평가원·교육청·EBSi의 공식 정답표를 웹에서 찾아 두 곳 이상 대조한 뒤 정답과 배점을 채워요. 저장하기 전에 확인할 수 있어요.</p>
   <div class="fields"><label>시험<select id="im-k">${IMP_KINDS.map(([kn, m], i) => `<option value="${i}" ${+k === i ? 'selected' : ''}>${kn === '수능' ? '수능 (11월)' : `${m}월 ${kn}`}</option>`).join('')}</select></label>
-  <label>시행 연도<select id="im-y">${[y, y - 1, y - 2, y - 3].map(v => `<option ${v === (S.f.iy || y) ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+  <label>시행 연도<select id="im-y">${Array.from({length: y - 2016}, (_, i) => y - i).map(v => `<option ${v === (S.f.iy || y) ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
   <label>학년<select id="im-g">${grades.map(v => `<option value="${v}" ${v === (grades.includes(g) ? g : grades[0]) ? 'selected' : ''}>고${v}</option>`).join('')}</select></label></div>
   <label>과목</label><div class="row">${['kor', 'math', 'eng', 'hist'].map(sj => `<label class="row" style="gap:6px;color:var(--ink)"><input type="checkbox" class="im-s" value="${sj}" ${sj === 'kor' ? 'checked' : ''} style="width:auto;min-height:0"> ${SUBJECTS[sj]}</label>`).join('')}</div>
+  <p class="small" style="margin:0">2020년 시행까지는 국어 선택과목이 없고 수학은 가형·나형으로 나뉘어 있어서, 그 형식에 맞게 가져와요. 오래된 시험일수록 못 찾는 문항이 생길 수 있어요.</p>
   <div class="row"><button class="btn r" id="im-go">가져오기</button><button class="btn o" data-act="closeModal">취소</button></div>
   <p class="small" id="im-msg" style="margin:0">과목 하나에 1~2분 걸려요. 웹 검색이 포함돼서 AI 크레딧이 조금 더 들어요.</p>`);
   const $ = id => document.getElementById(id);
@@ -1101,9 +1105,9 @@ function impForm() {
     S.f.ik = ki; S.f.iy = year; S.f.ig = grade; $('im-go').disabled = true;
     let done = 0; const tick = () => { $('im-msg').textContent = `정답표 찾는 중… ${done}/${subs.length} (과목당 1~2분)`; }; tick();
     const out = await Promise.all(subs.map(subj => {
-      const sections = impSections(subj, grade);
+      const sections = impSections(subj, grade, year);
       return API.importExam({academy_id: S.academy.id, label: impLabel(kind, month, year, grade), subjectName: SUBJECTS[subj], sections,
-        shortNote: subj === 'math' ? '수학 단답형(공통 16~22번, 선택 29~30번 등)은 정답이 정수다. 4점 문항도 p4에 적는다.' : subj === 'eng' ? '영어 듣기 1~17번 포함 45문항.' : ''})
+        shortNote: subj === 'math' ? (grade === 3 && impOld(year) ? '이 해는 가형·나형으로 나뉜 시험이다. 두 형 모두 1~30번이고 단답형(22~30번)은 정수다. 4점 문항도 p4에 적는다.' : '수학 단답형(공통 16~22번, 선택 29~30번 등)은 정답이 정수다. 4점 문항도 p4에 적는다.') : subj === 'kor' && impOld(year) ? '이 해는 국어 선택과목이 없는 45문항 단일 시험이다.' : subj === 'eng' ? '영어 듣기 1~17번 포함 45문항.' : ''})
         .then(r => ({subj, kind, month, year, grade, sections, ...r})).catch(e => ({subj, kind, month, year, grade, sections, error: String(e)})).finally(() => { done++; tick(); });
     }));
     closeModal(); S.impRes = out; S.impPick = new Set(out.map((r, i) => (r.exam && r.exam.found ? i : -1)).filter(i => i >= 0)); go('examImport');
@@ -1111,7 +1115,10 @@ function impForm() {
 }
 function impBuild(r) {
   const x = r.exam, e = template(r.subj);
-  if (r.grade < 3 && (r.subj === 'kor' || r.subj === 'math')) { e.layout = {qcount: r.subj === 'kor' ? 45 : 30, common: r.subj === 'kor' ? 45 : 30, tracks: []}; e.cuts = {all: []};
+  if (r.subj === 'math' && r.grade === 3 && impOld(r.year)) { e.layout = {qcount: 30, common: 0, tracks: [{id: 'ga', name: '가형'}, {id: 'na', name: '나형'}]}; e.cuts = {ga: [], na: []};
+    e.p3 = {ga: [], na: []}; e.p4 = {ga: [], na: []}; e.short = {ga: [22, 23, 24, 25, 26, 27, 28, 29, 30], na: [22, 23, 24, 25, 26, 27, 28, 29, 30]}; e.areas = {ga: '가형:1-30', na: '나형:1-30'}; }
+  else if (r.subj === 'kor' && r.grade === 3 && impOld(r.year)) { e.layout = {qcount: 45, common: 45, tracks: []}; e.cuts = {all: []}; e.p3 = {common: []}; e.areas = {common: '국어:1-45'}; }
+  else if (r.grade < 3 && (r.subj === 'kor' || r.subj === 'math')) { e.layout = {qcount: r.subj === 'kor' ? 45 : 30, common: r.subj === 'kor' ? 45 : 30, tracks: []}; e.cuts = {all: []};
     if (r.subj === 'math') { e.p3 = {common: []}; e.p4 = {common: []}; e.short = {common: [22, 23, 24, 25, 26, 27, 28, 29, 30]}; } e.areas = {common: SUBJECTS[r.subj] + ':1-' + e.layout.qcount}; }
   const title = impTitle(r.kind, r.month, r.year, r.grade, r.subj), ex = S.exams.find(z => z.title === title);
   e.id = ex ? ex.id : uid(); e.title = title; e.year = r.year; e.month = r.month; e.grade = r.grade; e.kind = r.kind;
@@ -1512,7 +1519,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.7 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 5.8 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
