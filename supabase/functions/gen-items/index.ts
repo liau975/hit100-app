@@ -218,8 +218,8 @@ Deno.serve(async (req) => {
         headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
         body: JSON.stringify({
           model: m,
-          max_tokens: think ? (LONG ? 40000 : 16000) : (b.passage ? 10000 : (LONG ? 24000 : 14000)),
-          ...(think ? { thinking: { type: "enabled", budget_tokens: LONG ? 24000 : 7000 } } : {}),
+          max_tokens: think ? (LONG ? 24000 : 16000) : (b.passage ? 10000 : (LONG ? 20000 : 14000)),
+          ...(think ? { thinking: { type: "enabled", budget_tokens: LONG ? 14000 : 7000 } } : {}),
           system: system + (think ? "\n- 풀이·검산은 생각 과정에서만 하고, 생각이 끝나면 곧바로 save_items를 호출한다. 해설은 3~5줄로 핵심만." : ""),
           tools: [TOOL],
           tool_choice: { type: "auto" },
