@@ -3,6 +3,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const MODEL = Deno.env.get("AI_MODEL") || "claude-sonnet-5-5";
+// Supabase 유료(Pro) 플랜이면 Secrets에 AI_LONG=1 → 함수가 최대 400초까지 돌 수 있으므로 더 길게 생각하게 한다
+const LONG = Deno.env.get("AI_LONG") === "1";
 const MODELS: Record<string, string> = { best: "claude-opus-5-5", std: "claude-sonnet-5-5", fast: "claude-haiku-5-5" };
 
 const GUIDE: Record<string, string> = {
@@ -187,7 +189,7 @@ Deno.serve(async (req) => {
       ].filter(Boolean).join("\n");
       const pmsg = [`과목: ${subjName}`, `유형: ${type || "(자유)"}`, note ? `선생님 요청: ${note}` : "",
         avoid.length ? `이미 쓴 소재 (전혀 다른 소재로):\n- ${avoid.join("\n- ")}` : "", `다양성 번호 ${seed}: 흔하지 않은 제재를 골라라.`].filter(Boolean).join("\n");
-      const o = await call(psys, pmsg, 6000, false);
+      const o = await call(psys, pmsg, LONG ? 10000 : 6000, false);
       const passage = (o.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").trim();
       if (!passage) return j({ error: `지문을 못 만들었어요 (stop: ${o.stop_reason || "?"})` }, 502);
       return j({ passage });
@@ -216,8 +218,8 @@ Deno.serve(async (req) => {
         headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
         body: JSON.stringify({
           model: m,
-          max_tokens: think ? 16000 : (b.passage ? 10000 : 14000),
-          ...(think ? { thinking: { type: "enabled", budget_tokens: 7000 } } : {}),
+          max_tokens: think ? (LONG ? 40000 : 16000) : (b.passage ? 10000 : (LONG ? 24000 : 14000)),
+          ...(think ? { thinking: { type: "enabled", budget_tokens: LONG ? 24000 : 7000 } } : {}),
           system: system + (think ? "\n- 풀이·검산은 생각 과정에서만 하고, 생각이 끝나면 곧바로 save_items를 호출한다. 해설은 3~5줄로 핵심만." : ""),
           tools: [TOOL],
           tool_choice: { type: "auto" },
