@@ -1074,7 +1074,7 @@ function bulkForm() {
   };
 }
 /* ---------- 시험 자동 가져오기 (웹에서 공식 정답표 찾기) ---------- */
-const IMP_KINDS = [['수능', 11, [3]], ['모평', 6, [3]], ['모평', 9, [3]], ['학평', 3, [1, 2, 3]], ['학평', 4, [3]], ['학평', 5, [3]], ['학평', 6, [1, 2]], ['학평', 7, [3]], ['학평', 9, [1, 2]], ['학평', 10, [1, 2, 3]], ['학평', 11, [1, 2]]];
+const IMP_KINDS = [['수능', 11, [3]], ['모평', 6, [3]], ['모평', 9, [3]], ['학평', 3, [1, 2, 3]], ['학평', 4, [3]], ['학평', 5, [3]], ['학평', 6, [1, 2]], ['학평', 7, [3]], ['학평', 9, [1, 2]], ['학평', 10, [3]], ['학평', 11, [1, 2]]];
 const impLabel = (kind, month, year, grade) => kind === '수능' ? `${year + 1}학년도 대학수학능력시험 (${year}년 11월 시행)` : kind === '모평' ? `${year + 1}학년도 ${month}월 모의평가 (${year}년 ${month}월 시행, 평가원)` : `${year}년 ${month}월 고${grade} 전국연합학력평가 (교육청)`;
 const impTitle = (kind, month, year, grade, subj) => (kind === '수능' ? `${year + 1}학년도 수능` : kind === '모평' ? `${year + 1}학년도 ${month}월 모평` : `${year}년 ${month}월 고${grade} 학평`) + ' ' + SUBJECTS[subj];
 const impOld = year => year <= 2020; // 2021년 시행(2022학년도)부터 국어·수학 선택과목 체제
@@ -1087,20 +1087,20 @@ function impSections(subj, grade, year) {
   return [{id: 'common', name: t.layout.tracks.length ? '공통' : SUBJECTS[subj] + ' 전체', from: 1, to: c}, ...t.layout.tracks.map(tr => ({id: tr.id, name: names[tr.id] || tr.name, from: c + 1, to: q}))];
 }
 function impForm() {
-  const y = new Date().getFullYear(), k = S.f.ik ?? 0, g = S.f.ig || 3, kd = IMP_KINDS[+k], grades = kd[2];
+  const y = new Date().getFullYear(), g = S.f.ig || 3, kinds = IMP_KINDS.map((kd, i) => [kd, i]).filter(([kd]) => kd[2].includes(g)), k = kinds.some(([, i]) => i === S.f.ik) ? S.f.ik : kinds[0][1];
   modal(`<h2 style="margin:0">✨ 시험 자동 가져오기</h2>
   <p class="small" style="margin:0">AI가 평가원·교육청·EBSi의 공식 정답표를 웹에서 찾아 두 곳 이상 대조한 뒤 정답과 배점을 채워요. 저장하기 전에 확인할 수 있어요.</p>
-  <div class="fields"><label>시험<select id="im-k">${IMP_KINDS.map(([kn, m], i) => `<option value="${i}" ${+k === i ? 'selected' : ''}>${kn === '수능' ? '수능 (11월)' : `${m}월 ${kn}`}</option>`).join('')}</select></label>
-  <label>시행 연도<select id="im-y">${Array.from({length: y - 2016}, (_, i) => y - i).map(v => `<option ${v === (S.f.iy || y) ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
-  <label>학년<select id="im-g">${grades.map(v => `<option value="${v}" ${v === (grades.includes(g) ? g : grades[0]) ? 'selected' : ''}>고${v}</option>`).join('')}</select></label></div>
+  <label>학년</label><div class="seg">${[1, 2, 3].map(v => `<button class="${g === v ? 'on' : ''}" id="im-g${v}" type="button">고${v}</button>`).join('')}</div>
+  <div class="fields"><label>시험<select id="im-k">${kinds.map(([[kn, m], i]) => `<option value="${i}" ${k === i ? 'selected' : ''}>${kn === '수능' ? '수능 (11월)' : `${m}월 ${kn === '모평' ? '모의평가 (평가원)' : '학력평가 (교육청)'}`}</option>`).join('')}</select></label>
+  <label>시행 연도<select id="im-y">${Array.from({length: y - 2016}, (_, i) => y - i).map(v => `<option ${v === (S.f.iy || y) ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
   <label>과목</label><div class="row">${['kor', 'math', 'eng', 'hist'].map(sj => `<label class="row" style="gap:6px;color:var(--ink)"><input type="checkbox" class="im-s" value="${sj}" ${sj === 'kor' ? 'checked' : ''} style="width:auto;min-height:0"> ${SUBJECTS[sj]}</label>`).join('')}</div>
   <p class="small" style="margin:0">2020년 시행까지는 국어 선택과목이 없고 수학은 가형·나형으로 나뉘어 있어서, 그 형식에 맞게 가져와요. 오래된 시험일수록 못 찾는 문항이 생길 수 있어요.</p>
   <div class="row"><button class="btn r" id="im-go">가져오기</button><button class="btn o" data-act="closeModal">취소</button></div>
   <p class="small" id="im-msg" style="margin:0">과목 하나에 1~2분 걸려요. 웹 검색이 포함돼서 AI 크레딧이 조금 더 들어요.</p>`);
   const $ = id => document.getElementById(id);
-  $('im-k').onchange = () => { S.f.ik = +$('im-k').value; S.f.iy = +$('im-y').value; closeModal(); impForm(); };
+  [1, 2, 3].forEach(v => { $('im-g' + v).onclick = () => { S.f.ig = v; S.f.iy = +$('im-y').value; closeModal(); impForm(); }; });
   $('im-go').onclick = async () => {
-    const ki = +$('im-k').value, [kind, month] = IMP_KINDS[ki], year = +$('im-y').value, grade = +$('im-g').value, subs = [...document.querySelectorAll('.im-s:checked')].map(x => x.value);
+    const ki = +$('im-k').value, [kind, month] = IMP_KINDS[ki], year = +$('im-y').value, grade = g, subs = [...document.querySelectorAll('.im-s:checked')].map(x => x.value);
     if (!subs.length) { $('im-msg').textContent = '과목을 하나 이상 고르세요.'; return; }
     S.f.ik = ki; S.f.iy = year; S.f.ig = grade; $('im-go').disabled = true;
     let done = 0; const tick = () => { $('im-msg').textContent = `정답표 찾는 중… ${done}/${subs.length} (과목당 1~2분)`; }; tick();
