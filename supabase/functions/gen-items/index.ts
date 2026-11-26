@@ -93,6 +93,7 @@ Deno.serve(async (req) => {
     if (!mem || mem.role === "student") return j({ error: "선생님 계정만 쓸 수 있어요." }, 403);
     if (b.action === "exam") return j(await importExam(key, b));
     if (b.action === "analyze") return j(await analyzeExam(key, b));
+    if (b.action === "omr") return j(await readOmr(key, b));
 
     const subject = String(b.subject || "kor");
     const subname = String(b.subname || "").slice(0, 40);
@@ -408,4 +409,47 @@ async function analyzeExam(key, b: any) {
     return { error: "분석을 정리하지 못했어요 (stop: " + (o.stop_reason || "?") + ")" };
   }
   return { error: "검색이 너무 길어져서 멈췄어요." };
+}
+
+// ================= 사진 채점: OMR 카드·시험지 사진에서 학생 답 읽기 (action: "omr") =================
+const OMR_TOOL = {
+  name: "save_answers",
+  description: "사진에서 읽은 학생 답을 저장한다",
+  input_schema: {
+    type: "object",
+    properties: {
+      answers: { type: "array", description: "문항별 학생 답", items: { type: "object", properties: { q: { type: "integer" }, a: { type: ["integer", "null"], description: "객관식은 1~5, 단답형은 정수, 안 칠했거나 못 읽으면 null" } }, required: ["q", "a"] } },
+      unsure: { type: "array", items: { type: "integer" }, description: "두 개 이상 칠했거나 흐리거나 지운 흔적 등으로 확신이 없는 문항 번호" },
+      track: { type: ["string", "null"], description: "선택과목 칸에 표시된 과목 이름 (예: 화법과 작문, 언어와 매체, 확률과 통계, 미적분, 기하). 없으면 null" },
+      name: { type: ["string", "null"], description: "사진에 보이는 학생 이름. 없으면 null" },
+      note: { type: "string" },
+    },
+    required: ["answers", "unsure"],
+  },
+};
+async function readOmr(key, b: any) {
+  const imgs = (Array.isArray(b.images) ? b.images : []).slice(0, 3).map((d: string) => {
+    const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(String(d || ""));
+    return m ? { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } } : null;
+  }).filter(Boolean);
+  if (!imgs.length) return { error: "사진이 없어요." };
+  const n = Math.max(1, Math.min(60, Number(b.qcount) || 45));
+  const text = [
+    `이 사진(들)은 학생이 푼 ${b.subjectName || ""} 시험의 OMR 답안지 또는 시험지다. 총 ${n}문항, 객관식은 ${b.choices || 5}지선다.`,
+    b.short && b.short.length ? `단답형(정수로 답하는) 문항: ${b.short.join(", ")}번. OMR이면 백·십·일의 자리 칸에 칠한 숫자를 읽는다.` : "",
+    b.tracks && b.tracks.length ? `선택과목: ${b.tracks.join(" / ")} 중 하나에 표시돼 있을 수 있다. 선택과목 문항 번호도 이어지는 번호(${b.common + 1}번~${n}번) 그대로 쓴다.` : "",
+    "OMR이면 각 문항 줄에서 진하게 칠해진 칸을 읽는다. 시험지면 학생이 선지에 동그라미·체크·표시한 번호를 읽는다 (문제 옆에 적은 숫자 포함).",
+    "칠하지 않았거나 가려져 보이지 않으면 a는 null. 두 개 이상 칠했거나 흐리게 지운 흔적이 있어 애매하면 가장 진한 것을 a에 넣고 unsure에 번호를 넣는다.",
+    "정답을 맞히려 하지 말고, 보이는 그대로만 읽는다. 1번부터 " + n + "번까지 모두 answers에 넣고 save_answers를 호출한다.",
+  ].filter(Boolean).join("\n");
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model: MODELS[String(b.quality)] || MODELS.best, max_tokens: 4000, tools: [OMR_TOOL], tool_choice: { type: "auto" }, messages: [{ role: "user", content: [...imgs, { type: "text", text }] }] }),
+  });
+  const o = await r.json();
+  if (!r.ok) return { error: "AI 호출 실패: " + (o?.error?.message || r.status) };
+  const tu = (o.content || []).find((c: any) => c.type === "tool_use" && c.name === "save_answers");
+  if (!tu) return { error: "답을 읽지 못했어요. 사진을 더 밝고 반듯하게 찍어 주세요." };
+  return { omr: tu.input };
 }

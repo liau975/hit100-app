@@ -913,7 +913,8 @@ function vGrade() {
   <label>응시일<input type="date" data-in="gDate" value="${esc(g.taken_date)}"></label></div>
   ${!c ? `<div class="empty" style="margin-top:14px">${S.exams.length ? '시험을 선택하세요.' : '등록된 시험이 없어요. 시험 탭에서 먼저 등록하세요.'}</div>` : `
   <div class="row" style="margin:14px 0 10px"><div class="seg"><button class="${c.mode === 'answers' ? 'on' : ''}" data-act="gMode" data-v="answers" ${c.key ? '' : 'disabled'}>답 입력</button><button class="${c.mode === 'wrong' ? 'on' : ''}" data-act="gMode" data-v="wrong">틀린 문항만 표시</button></div>
-  ${c.key ? '' : '<span class="small">이 시험은 정답이 다 입력되지 않아서 틀린 문항 표시만 돼요.</span>'}</div>
+  ${c.key ? '' : '<span class="small">이 시험은 정답이 다 입력되지 않아서 틀린 문항 표시만 돼요.</span>'}
+  ${c.key && !DEMO ? `<label class="btn r s" style="cursor:pointer" id="g-photo-l">📷 사진으로 답 읽기<input type="file" accept="image/*" capture="environment" multiple data-in="gPhoto" style="display:none"></label><span class="small" id="g-photo-msg">OMR 카드나 푼 시험지를 찍으면 AI가 학생 답을 채워요</span>` : ''}</div>
   <div class="work"><div class="omr" id="g-omr"></div><div class="res" id="g-res"></div></div>
   <h2>오답 정리 <span class="small" id="g-wcount"></span></h2><p class="small">원인을 체크하고, ★로 보고서에 넣을 어려운 문제 3개를 고르세요 (기본: 난이도 높은 순).</p>
   <div class="list" id="g-wrong"></div>
@@ -923,10 +924,26 @@ function vGrade() {
 }
 function setAns(v) {
   const g = S.g, c = gCtx(); if (!c) return; const n = QN(c.e);
+  if (g.unsure) g.unsure = g.unsure.filter(x => x !== g.cur);
   g.answers[g.cur - 1] = v === null || v === '' || v === undefined ? null : +v;
   if (v !== null && v !== '' && g.cur < n) g.cur++;
   gradeDyn();
   if (isShort(c.e, c.tr, g.cur)) { const i = document.getElementById('g-short'); if (i) i.focus(); }
+}
+async function gPhoto(files) {
+  const c = gCtx(); if (!c) return; const e = c.e, msg = document.getElementById('g-photo-msg'), lab = document.getElementById('g-photo-l');
+  if (msg) msg.textContent = '사진 읽는 중… (20초~1분)'; if (lab) lab.style.opacity = .5;
+  try {
+    const images = []; for (const f of files.slice(0, 3)) images.push(await compressImage(f, 1800));
+    const short = []; for (let q = 1; q <= QN(e); q++) if (isShort(e, c.tr, q)) short.push(q);
+    const r = await API.importExam({action: 'omr', academy_id: S.academy.id, images, qcount: QN(e), choices: e.choices, short, common: commonLen(e), subjectName: examSubj(e), tracks: isSplit(e) ? e.layout.tracks.map(t => t.name) : []});
+    const o = r.omr; if (!o || !(o.answers || []).length) throw (r.error || '답을 읽지 못했어요');
+    const g = S.g;
+    if (o.track && isSplit(e)) { const t = e.layout.tracks.find(t => o.track.includes(t.name) || t.name.split('').every(ch => o.track.includes(ch))); if (t) g.subject = t.id; }
+    let n = 0; o.answers.forEach(x => { const q = +x.q; if (q >= 1 && q <= QN(e)) { g.answers[q - 1] = x.a === null || x.a === undefined || x.a === 0 ? null : +x.a; if (x.a !== null && x.a !== undefined) n++; } });
+    g.unsure = (o.unsure || []).map(Number); g.cur = g.unsure[0] || 1;
+    render(); toast(`${n}문항을 읽었어요${g.unsure.length ? ` · 노란 칸 ${g.unsure.length}개는 확인해 주세요` : ''}${o.name ? ` · 이름: ${o.name}` : ''}`);
+  } catch (err) { if (msg) msg.textContent = '실패: ' + err; if (lab) lab.style.opacity = 1; }
 }
 function gradeDyn() {
   const c = gCtx(); if (!c) return; const g = S.g, el = id => document.getElementById(id), e = c.e, n = QN(e);
@@ -941,7 +958,7 @@ function gradeDyn() {
     <div class="row" style="margin-bottom:10px"><button class="btn o s" data-act="gMove" data-v="-1">← 이전</button><button class="btn o s" data-act="gAns" data-v="0">비우기</button><button class="btn o s" data-act="gMove" data-v="1">다음 →</button>
     <input data-in="gPaste" placeholder="${(e.short.common || []).length || Object.values(e.short).some(x => (x || []).length) ? '한 번에: 띄어쓰기로 구분 후 Enter' : '한 번에: 숫자 이어서 치고 Enter'} (빈칸 0)" style="flex:1;min-width:200px"></div>
     <div class="grid">${Array.from({length: n}, (_, i) => { const q = i + 1, v = g.answers[i], on = v !== null && v !== undefined && v !== '';
-      return `<button class="q ${on && wset.has(q) ? 'x' : ''} ${on && !wset.has(q) ? 'ok' : ''} ${g.cur === q ? 'cur' : ''}" data-act="gCur" data-q="${q}">${q}<small>${on ? esc(fmtAns(e, c.tr, q, v)) : '·'}</small>${extra(q)}</button>`; }).join('')}</div>`;
+      return `<button class="q ${on && wset.has(q) ? 'x' : ''} ${on && !wset.has(q) ? 'ok' : ''} ${g.cur === q ? 'cur' : ''} ${(g.unsure || []).includes(q) ? 'uns' : ''}" data-act="gCur" data-q="${q}" ${(g.unsure || []).includes(q) ? 'title="사진에서 애매하게 읽힌 문항이에요. 확인하세요"' : ''}>${q}<small>${on ? esc(fmtAns(e, c.tr, q, v)) : '·'}</small>${extra(q)}</button>`; }).join('')}</div>`;
   } else {
     omr = `<h3>틀린 문항을 눌러 표시 · <span class="small">빨간 숫자 = 배점</span></h3><div class="grid">${Array.from({length: n}, (_, i) => { const q = i + 1;
       return `<button class="q ${wset.has(q) ? 'x' : ''}" data-act="gWrong" data-q="${q}" aria-pressed="${wset.has(q)}">${q}${extra(q)}</button>`; }).join('')}</div>
@@ -986,15 +1003,15 @@ function reportFields(a, r) {
 }
 function vReport() {
   const a = S.attempts.find(x => x.id === S.p), r = a && evalAttempt(a); if (!r) return '<div class="empty">보고서를 찾을 수 없어요.</div>';
-  const st = examStats(r.e);
+  const st = examStats(r.e), hasAna = r.wrong.some(q => (r.e.analysis || {})[sk(r.e, r.tr, q)]);
   return `<div class="top noprint"><div><button class="btn o s" data-act="openStudent" data-id="${a.student_id}">← 학생 페이지</button></div>
   <div class="row">${DEMO ? '' : `<button class="btn r s" data-act="shareReport" data-id="${a.id}">📩 학부모 링크</button>`}<button class="btn ${DEMO ? 'r' : 'o'} s" data-act="copyReport" data-id="${a.id}">텍스트 복사</button><button class="btn o s" data-act="print">인쇄</button><button class="btn o s" data-act="editAttempt" data-id="${a.id}">채점 수정</button><button class="btn o s" data-act="delAttempt" data-id="${a.id}">삭제</button></div></div>
   <div class="report"><div class="title">클리닉 보고 (모의고사 편)</div><table>${reportFields(a, r).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table><div class="foot">${esc(S.academy.name)}</div></div>
   ${(() => { const tc = {}; r.wrong.forEach(q => { const t = typeOf(r.e, r.tr, q); tc[t] = (tc[t] || 0) + 1; }); const arr = Object.entries(tc).sort((a, b) => b[1] - a[1]); return arr.length ? `<h2>유형별 오답</h2><div class="row">${arr.map(([t, n]) => `<span class="tag r">${esc(t)} ${n}</span>`).join('')}</div><div class="row noprint" style="margin-top:10px"><button class="btn r s" data-act="clinicSheet" data-id="${a.student_id}" data-sub="${r.e.subject}">${icon('file', 16)}이 학생 맞춤 시험지 만들기</button></div>` : ''; })()}
   <h2>전체 오답 (${r.wrong.length}문항)</h2>
-  ${r.wrong.length ? `<div class="scroll tbl"><table><thead><tr><th>번호</th><th>영역</th><th class="n">배점</th><th>난이도</th><th class="n">정답</th><th class="n">학생 답</th><th>원인 · 메모</th></tr></thead><tbody>
+  ${r.wrong.length ? `<div class="scroll tbl"><table><thead><tr><th>번호</th><th>영역</th><th class="n">배점</th><th>난이도</th><th class="n">정답</th><th class="n">학생 답</th><th>원인 · 메모</th>${hasAna ? '<th class="noprint">풀이</th>' : ''}</tr></thead><tbody>
   ${r.wrong.map(q => { const d = diff(r.e, r.tr, q, st), n = (a.notes || {})[q] || {}, k = keyOf(r.e, r.tr, q);
-    return `<tr><td>${q}${(a.picks || []).includes(q) ? ' ★' : ''}</td><td>${esc(areaOf(r.e, r.tr, q))}</td><td class="n">${pts(r.e, r.tr, q)}</td><td>${lvBadge(d)}</td><td class="n">${k === null ? '-' : esc(fmtAns(r.e, r.tr, q, k))}</td><td class="n">${a.mode === 'answers' ? esc(fmtAns(r.e, r.tr, q, (a.answers || [])[q-1])) : '-'}</td><td>${esc([(n.causes || []).join(', '), n.memo].filter(Boolean).join(' · ')) || '-'}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="empty">만점이에요!</div>'}`;
+    return `<tr><td>${q}${(a.picks || []).includes(q) ? ' ★' : ''}</td><td>${esc(areaOf(r.e, r.tr, q))}</td><td class="n">${pts(r.e, r.tr, q)}</td><td>${lvBadge(d)}</td><td class="n">${k === null ? '-' : esc(fmtAns(r.e, r.tr, q, k))}</td><td class="n">${a.mode === 'answers' ? esc(fmtAns(r.e, r.tr, q, (a.answers || [])[q-1])) : '-'}</td><td>${esc([(n.causes || []).join(', '), n.memo].filter(Boolean).join(' · ')) || '-'}</td>${hasAna ? `<td class="noprint">${(r.e.analysis || {})[sk(r.e, r.tr, q)] ? `<button class="btn o s" data-act="anaOpen" data-e="${r.e.id}" data-tr="${esc(r.tr)}" data-q="${q}">🔍 분석</button>` : '<span class="small">-</span>'}</td>` : ''}</tr>`; }).join('')}</tbody></table></div>` : '<div class="empty">만점이에요!</div>'}`;
 }
 
 /* ---------- 학부모 리포트 링크 ---------- */
@@ -1007,7 +1024,8 @@ function reportSnapshot(a) {
     date: a.taken_date, score: r.score, max: r.e.max, g: r.g || null, total: QN(r.e), nwrong: r.wrong.length, attitude: a.attitude || '',
     areas: r.areas.map(x => ({n: x.n, total: x.total, c: x.c})), types: Object.entries(tc).sort((x, y) => y[1] - x[1]).map(([t, n]) => ({t, n})),
     wrong: r.wrong.map(q => { const k = keyOf(r.e, r.tr, q), d = diff(r.e, r.tr, q, st), n = (a.notes || {})[q] || {};
-      return {q, area: areaOf(r.e, r.tr, q), type: typeOf(r.e, r.tr, q), pts: pts(r.e, r.tr, q), lv: d.lv === 'n' ? '' : d.lv, key: k === null ? '' : fmtAns(r.e, r.tr, q, k), ans: a.mode === 'answers' ? fmtAns(r.e, r.tr, q, (a.answers || [])[q - 1]) : '', memo: [(n.causes || []).join(', '), n.memo].filter(Boolean).join(' · '), star: (a.picks || []).includes(q)}; }),
+      return {q, area: areaOf(r.e, r.tr, q), type: typeOf(r.e, r.tr, q), pts: pts(r.e, r.tr, q), lv: d.lv === 'n' ? '' : d.lv, key: k === null ? '' : fmtAns(r.e, r.tr, q, k), ans: a.mode === 'answers' ? fmtAns(r.e, r.tr, q, (a.answers || [])[q - 1]) : '', memo: [(n.causes || []).join(', '), n.memo].filter(Boolean).join(' · '), star: (a.picks || []).includes(q),
+        ana: (an => an ? {point: an.point || '', tip: an.tip || '', trap: ((an.traps || []).find(t => String(t.choice).includes(fmtAns(r.e, r.tr, q, (a.answers || [])[q - 1]) || '#')) || {}).why || ''} : null)((r.e.analysis || {})[sk(r.e, r.tr, q)])}; }),
     trend, comment: a.comment || ''};
 }
 function trendSvg(t) {
@@ -1035,6 +1053,8 @@ async function renderPublicReport(token) {
   ${(d.trend || []).length > 1 ? `<div class="card"><h3>점수 변화</h3>${trendSvg(d.trend)}</div>` : ''}
   ${(d.wrong || []).length ? `<div class="card"><h3>틀린 문항</h3><div class="scroll tbl"><table><thead><tr><th>번호</th><th>영역 · 유형</th><th>난이도</th><th class="n">정답</th><th class="n">학생 답</th>${d.wrong.some(w => w.memo) ? '<th>원인 · 메모</th>' : ''}</tr></thead><tbody>
     ${d.wrong.map(w => `<tr><td><b>${w.q}</b>${w.star ? ' ★' : ''}</td><td>${esc(w.type && w.type !== w.area ? w.type : w.area)}</td><td>${w.lv ? `<span class="lv ${w.lv}">${w.lv}</span>` : '–'}</td><td class="n">${esc(w.key || '-')}</td><td class="n">${esc(w.ans || '-')}</td>${d.wrong.some(x => x.memo) ? `<td>${esc(w.memo)}</td>` : ''}</tr>`).join('')}</tbody></table></div></div>` : ''}
+  ${(d.wrong || []).some(w => w.ana) ? `<div class="card"><h3>틀린 문항 풀이 포인트</h3>${d.wrong.filter(w => w.ana).map(w => `<div class="pub-ana"><b>${w.q}번 · ${esc(w.type && w.type !== w.area ? w.type : w.area)}</b>
+    ${w.ana.trap ? `<p><span>왜 헷갈렸을까</span>${esc(w.ana.trap)}</p>` : ''}<p><span>풀이 핵심</span>${esc(w.ana.point)}</p>${w.ana.tip ? `<p><span>이렇게 공부해요</span>${esc(w.ana.tip)}</p>` : ''}</div>`).join('')}</div>` : ''}
   <p class="small" style="text-align:center;margin:18px 0 30px">${esc(d.academy || '')} · hit100으로 만든 리포트예요</p></div>`;
 }
 
@@ -1108,11 +1128,11 @@ function vBank() {
     : `<div class="empty">${(S.items || []).length ? '조건에 맞는 문제가 없어요.' : '아직 문제가 없어요.<br><b>✨ AI로 문제 만들기</b>로 원하는 유형의 새 문제를 바로 만들거나,<br>학원 자료를 캡처해 <b>문제 추가</b>로 올리세요.'}</div>`}${taxoDatalists()}`;
 }
 /* 이미지 줄이기 (최대 폭 1400px, JPEG) */
-function compressImage(file) {
+function compressImage(file, maxW) {
   return new Promise((ok, no) => {
     const rd = new FileReader();
     rd.onload = () => { const im = new Image(); im.onload = () => {
-      const max = 1400, sc = Math.min(1, max / im.width), c = document.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc);
+      const max = maxW || 1400, sc = Math.min(1, max / Math.max(im.width, maxW ? im.height : 0)), c = document.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc);
       const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', .85)); };
       im.onerror = () => no('이미지를 읽지 못했어요'); im.src = rd.result; };
     rd.onerror = () => no('파일을 읽지 못했어요'); rd.readAsDataURL(file);
@@ -1656,7 +1676,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.4 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.5 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
@@ -1725,6 +1745,11 @@ const ACT = {
   esub: el => { S.f.esub = el.dataset.v; render(); },
   tsub: el => { S.f.tsub = el.dataset.v; render(); },
   impExam: () => impForm(),
+  anaOpen: el => { const e = examById(el.dataset.e), q = +el.dataset.q, a = e && (e.analysis || {})[sk(e, el.dataset.tr, q)]; if (!a) return; const k = keyOf(e, el.dataset.tr, q);
+    modal(`<div class="row" style="gap:8px"><span class="dqn">${q}</span><b>${esc(a.type || typeOf(e, el.dataset.tr, q))}</b>${a.level ? `<span class="lv ${a.level}">${a.level}</span>` : ''}<span class="tag">정답 ${k === null ? '-' : esc(fmtAns(e, el.dataset.tr, q, k))}</span></div>
+      <div class="dgrid" style="grid-template-columns:1fr"><div><h4>🎯 출제 의도</h4><p>${esc(a.intent || '')}</p></div><div><h4>🔑 풀이 핵심</h4><p>${esc(a.point || '')}</p></div>${a.answer ? `<div><h4>✅ 정답 근거</h4><p>${esc(a.answer)}</p></div>` : ''}
+      ${(a.traps || []).length ? `<div><h4>⚠️ 매력적인 오답</h4>${a.traps.map(t => `<p><b>${esc(t.choice)}</b> ${esc(t.why)}</p>`).join('')}</div>` : ''}${a.tip ? `<div class="dtip"><h4>💡 학습 팁</h4><p>${esc(a.tip)}</p></div>` : ''}</div>
+      <div class="row"><button class="btn o" data-act="closeModal">닫기</button></div>`); },
   deepRun: el => { const e = examById(el.dataset.id); if (!e || S._deep) return; let have = 0; for (let q = 1; q <= QN(e); q++) if ((e.analysis || {})[sk(e, el.dataset.tr, q)]) have++; S._deepAll = have >= QN(e); deepRun(e, el.dataset.tr); },
   autoTypes: async el => { const e = S.exams.find(x => x.id === el.dataset.id); if (!e) return; el.disabled = true; el.textContent = '유형 찾는 중… (1~2분)';
     const c = commonLen(e), q = QN(e), secs = isSplit(e) ? [...(c ? [{id: 'common', name: '공통', from: 1, to: c}] : []), ...e.layout.tracks.map(t => ({id: t.id, name: t.name, from: c + 1, to: q}))] : [{id: 'common', name: examSubj(e) + ' 전체', from: 1, to: q}];
@@ -1889,7 +1914,7 @@ document.addEventListener('click', ev => { const ga = ev.target.closest && ev.ta
 document.addEventListener('input', ev => {
   const el = ev.target.closest && ev.target.closest('[data-in]'); if (!el) return; const k = el.dataset.in;
   if (k === 'q' && ev.isComposing) return;
-  if (k === 'gPaste' || k === 'btype' || k === 'wsFind' || k === 'dropFile') return;
+  if (k === 'gPaste' || k === 'btype' || k === 'wsFind' || k === 'dropFile' || k === 'gPhoto') return;
   const f = IN[k]; if (f) f(el);
 });
 document.addEventListener('compositionend', ev => { const el = ev.target.closest && ev.target.closest('[data-in="q"]'); if (el) IN.q(el); });
@@ -1897,6 +1922,7 @@ document.addEventListener('change', async ev => { const el = ev.target; if (!el.
   if (k === 'gPaste' && el.value) IN.gPaste(el);
   if (k === 'btype') { S.f.btype = el.value.trim(); render(); }
   if (k === 'wsFind') { S.f.wsFind = el.value.trim(); render(); }
+  if (k === 'gPhoto' && el.files && el.files.length) { gPhoto([...el.files]); el.value = ''; }
   if (k === 'dropFile' && el.files && el.files[0]) { try { setDropImg(el.dataset.k, await compressImage(el.files[0])); } catch (e) { toast(String(e)); } }
 });
 document.addEventListener('paste', async ev => {
