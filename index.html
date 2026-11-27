@@ -299,6 +299,38 @@ button.item:hover,.cards>.card:hover{transform:translateY(-2px);box-shadow:0 10p
 .dtip{background:var(--soft);border-radius:12px;padding:10px 12px}
 .dchips .chip{display:inline-grid;place-items:center;min-width:34px;height:30px;min-height:0;padding:0 8px;border-radius:9px;background:var(--soft);color:var(--mut);font-weight:700;font-size:13px;text-decoration:none;border:0}.dchips a.chip{background:var(--redt);color:var(--red)}.dchips a.chip:hover{background:var(--grad);color:#fff}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* 문제 풀이 */
+.sv-card{display:flex;flex-direction:column;gap:12px}
+.sv-drop{display:block;border:2px dashed var(--line);border-radius:18px;cursor:pointer;background:var(--soft,transparent);transition:.15s}
+.sv-drop:hover{border-color:var(--red)}
+.sv-drop.has{border-style:solid;cursor:default}
+.sv-cam{display:flex;flex-direction:column;align-items:center;gap:6px;padding:34px 16px;text-align:center;color:var(--red)}
+.sv-cam b{font-size:17px;color:var(--ink)}.sv-cam span{font-size:13px;color:var(--mut,#888)}
+.sv-pics{display:flex;gap:10px;padding:10px;flex-wrap:wrap}
+.sv-pics img{max-height:260px;max-width:100%;border-radius:12px;object-fit:contain;background:#fff}
+.sv-pics.sm img{max-height:180px}
+.sv-pic{position:relative}.sv-pic .ibtn{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;width:28px;height:28px;min-height:0}
+.sv-more{cursor:pointer;color:var(--red)}
+.btn.big{min-height:52px;font-size:16px}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;animation:svspin .8s linear infinite;vertical-align:-3px}
+@keyframes svspin{to{transform:rotate(360deg)}}
+.sv-h{display:flex;align-items:center;gap:10px;text-align:left;width:100%}
+.sv-h .grow{flex:1;min-width:0;display:flex;flex-direction:column}
+.sv-clip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sv-ans{font-weight:800;color:var(--red);white-space:nowrap}.sv-warn{color:#d98a00}
+.sv-prob{font-size:15.5px;line-height:1.75;margin-top:6px}
+.sv-answer{display:flex;align-items:center;gap:14px;background:var(--grad);color:#fff;border:0}
+.sv-answer span{font-size:13px;opacity:.85}.sv-answer b{font-size:22px}
+.sv-answer.in{border-radius:12px;padding:10px 14px;margin:8px 0}
+.sv-ok,.sv-bad{border-radius:14px;padding:11px 14px;margin:0 0 12px;font-size:14px}
+.sv-ok{background:light-dark(#e6f7ec,#1c3324);color:light-dark(#137a3a,#7be0a0)}
+.sv-bad{background:light-dark(#fff4dc,#3a2f14);color:light-dark(#8a5a00,#ffd27a)}
+.sv-step{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--hair);animation:svin .25s ease}
+.sv-step:first-of-type{border-top:0}
+.sv-n{flex:none;width:28px;height:28px;border-radius:50%;background:var(--grad);color:#fff;display:grid;place-items:center;font-weight:800;font-size:14px}
+.sv-b{line-height:1.75;margin-top:3px;overflow-x:auto}
+@keyframes svin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>

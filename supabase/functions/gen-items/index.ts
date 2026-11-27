@@ -90,6 +90,24 @@ Deno.serve(async (req) => {
 
     const b = await req.json();
     const { data: mem } = await sb.from("members").select("role").eq("user_id", user.id).eq("academy_id", b.academy_id).maybeSingle();
+    if (b.action === "solve") {
+      if (!mem) return j({ error: "학원 멤버만 쓸 수 있어요." }, 403);
+      const { data: ac } = await sb.from("academies").select("settings").eq("id", b.academy_id).maybeSingle();
+      const st = (ac?.settings || {}) as any;
+      if (mem.role === "student") {
+        if (st.solve === "off") return j({ error: "학원에서 문제 풀이 기능을 꺼 두었어요." }, 403);
+        const lim = Number(st.solveLimit) || 20;
+        const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+        const { count } = await sb.from("solves").select("id", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", since);
+        if ((count || 0) >= lim) return j({ error: `하루 ${lim}문제까지 풀 수 있어요. 내일 다시 해 주세요.` }, 429);
+      }
+      const out = await solveProblem(key, b);
+      if (out.solve) {
+        const { data: row } = await sb.from("solves").insert({ academy_id: b.academy_id, user_id: user.id, subject: out.solve.subject || null, result: out.solve }).select("id").maybeSingle();
+        if (row) (out as any).id = row.id;
+      }
+      return j(out);
+    }
     if (!mem || mem.role === "student") return j({ error: "선생님 계정만 쓸 수 있어요." }, 403);
     if (b.action === "exam") return j(await importExam(key, b));
     if (b.action === "analyze") return j(await analyzeExam(key, b));
@@ -452,4 +470,91 @@ async function readOmr(key, b: any) {
   const tu = (o.content || []).find((c: any) => c.type === "tool_use" && c.name === "save_answers");
   if (!tu) return { error: "답을 읽지 못했어요. 사진을 더 밝고 반듯하게 찍어 주세요." };
   return { omr: tu.input };
+}
+
+
+// ================= 사진 문제 풀이 (콴다식, action: "solve") =================
+const SOLVE_TOOL = {
+  name: "save_solution",
+  description: "사진 속 문제의 풀이를 저장한다",
+  input_schema: {
+    type: "object",
+    properties: {
+      subject: { type: "string", description: "과목 (국어/수학/영어/과학/사회/한국사 등)" },
+      unit: { type: "string", description: "단원·유형 (예: 미적분 - 정적분의 활용, 문학 - 현대시 표현상 특징)" },
+      problem: { type: "string", description: "사진 속 문제를 그대로 옮긴 것. 수식은 $...$ LaTeX. 선지는 ①~⑤. 지문이 길면 문제에 필요한 부분만 요약하고 [지문 요약]이라고 표시" },
+      answer: { type: "string", description: "최종 정답 (예: ③, 12, $\\frac{3}{2}$)" },
+      steps: { type: "array", description: "단계별 풀이 3~8단계", items: { type: "object", properties: { title: { type: "string", description: "이 단계에서 하는 일 한 줄" }, body: { type: "string", description: "설명. 수식은 $...$" } }, required: ["title", "body"] } },
+      check: { type: "string", description: "검산: 다른 방법이나 대입으로 답이 맞는지 확인한 과정" },
+      concepts: { type: "array", items: { type: "string" }, description: "이 문제에 쓰인 핵심 개념·공식 2~4개" },
+      traps: { type: "string", description: "학생들이 자주 틀리는 지점·매력적 오답" },
+      similar: { type: "object", description: "같은 개념의 연습 문제 1개", properties: { q: { type: "string" }, a: { type: "string" }, explain: { type: "string" } } },
+      level: { type: "string", enum: ["최상", "상", "중", "하", "최하"] },
+      confident: { type: "boolean", description: "답을 확신하면 true. 사진이 흐리거나 조건이 잘렸거나 풀이에 확신이 없으면 false" },
+      note: { type: "string", description: "사진이 잘렸거나 읽기 어려운 부분이 있으면 적는다" },
+    },
+    required: ["subject", "problem", "answer", "steps", "confident"],
+  },
+};
+const ANS_TOOL = { name: "save_answer", description: "최종 정답만 저장", input_schema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] } };
+
+function normAns(a: string) {
+  const s = String(a || "").replace(/\s|\$|\\,|\\!|\\left|\\right/g, "");
+  const circ: Record<string, string> = { "①": "1", "②": "2", "③": "3", "④": "4", "⑤": "5" };
+  const m = /^[①②③④⑤]/.exec(s); if (m) return circ[m[0]];
+  return s.replace(/^정답[:：]?/, "").replace(/번$/, "").toLowerCase();
+}
+
+async function solveProblem(key: string, b: any) {
+  const imgs = (Array.isArray(b.images) ? b.images : []).slice(0, 2).map((d: string) => {
+    const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(String(d || ""));
+    return m ? { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } } : null;
+  }).filter(Boolean);
+  if (!imgs.length && !b.text) return { error: "사진이나 문제를 넣어 주세요." };
+  const content: any[] = [...imgs];
+  const ask = [
+    "너는 한국 고등학생을 가르치는 최고 수준의 1타 강사다. 사진(또는 글) 속 문제를 풀어 준다.",
+    b.subjectHint ? `과목: ${String(b.subjectHint).slice(0, 20)}` : "",
+    b.text ? `문제(학생이 입력):\n${String(b.text).slice(0, 4000)}` : "",
+    b.ask ? `학생 질문: ${String(b.ask).slice(0, 300)}` : "",
+    "사진에 문제가 여러 개면 동그라미·체크 표시된 문제, 없으면 가장 크게 보이는 첫 문제를 푼다.",
+    "먼저 조건을 빠짐없이 정리하고, 고등학생이 따라올 수 있게 단계마다 왜 그렇게 하는지 설명한다. 교육과정 밖 공식은 쓰지 않는다.",
+    "답을 낸 뒤 반드시 다른 방법·대입·선지 검토로 검산한다. 검산이 안 맞으면 다시 푼다.",
+    "국어·영어 등 지문 문제는 근거가 되는 지문 문장을 짚어 주고, 각 오답 선지가 왜 틀렸는지도 단계에 넣는다.",
+    "모든 수식은 $...$ LaTeX로 쓴다. 끝나면 save_solution을 호출한다.",
+  ].filter(Boolean).join("\n");
+  content.push({ type: "text", text: ask });
+
+  const main = (async () => {
+    for (const think of [true, false]) {
+      const body: any = { model: MODELS.best, max_tokens: think ? 16000 : 8000, tools: [SOLVE_TOOL], tool_choice: { type: "auto" }, messages: [{ role: "user", content }] };
+      if (think) body.thinking = { type: "enabled", budget_tokens: LONG ? 10000 : 6000 };
+      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify(body) });
+      const o = await r.json();
+      if (!r.ok) { if (think) continue; return { error: "AI 호출 실패: " + (o?.error?.message || r.status) }; }
+      const tu = (o.content || []).find((c: any) => c.type === "tool_use" && c.name === "save_solution");
+      if (tu) return { solve: tu.input };
+      if (!think) return { error: "풀이를 정리하지 못했어요. 문제가 잘 보이게 다시 찍어 주세요." };
+    }
+    return { error: "풀이 실패" };
+  })();
+  // 독립 검증: 다른 모델이 따로 답만 낸다
+  const verify = (async () => {
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({ model: MODELS.std, max_tokens: 12000, thinking: { type: "enabled", budget_tokens: 6000 }, tools: [ANS_TOOL], tool_choice: { type: "auto" },
+          messages: [{ role: "user", content: [...imgs, { type: "text", text: (b.text ? "문제:\n" + String(b.text).slice(0, 4000) + "\n" : "") + "이 문제(표시된 문제, 없으면 첫 문제)를 직접 풀어 최종 정답만 save_answer로 저장해. 객관식이면 ①~⑤ 기호로." }] }] }) });
+      const o = await r.json();
+      const tu = (o.content || []).find((c: any) => c.type === "tool_use" && c.name === "save_answer");
+      return tu ? String(tu.input.answer || "") : null;
+    } catch { return null; }
+  })();
+  const [m, v] = await Promise.all([main, verify]);
+  if ((m as any).solve) {
+    const s = (m as any).solve;
+    s.verify = v;
+    s.agree = v === null ? null : normAns(v) === normAns(s.answer);
+    if (s.agree === false) s.confident = false;
+  }
+  return m;
 }
