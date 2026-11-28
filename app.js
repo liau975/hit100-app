@@ -277,6 +277,10 @@ const SB = {
     if (data && data.error) throw data.error; return data || {}; },
   async setMySchool(aid, kind, name, code) { return this.chk(await sb.rpc('set_my_school', {p_academy: aid, p_kind: kind, p_name: name, p_code: code})); },
   async clearMySchool(aid) { this.chk(await sb.rpc('clear_my_school', {p_academy: aid})); },
+  async aiStatus(aid) { return this.chk(await sb.rpc('ai_status', {aid})); },
+  async setAiKey(aid, k) { return this.chk(await sb.rpc('set_ai_key', {aid, k})); },
+  async adminAiList() { return this.chk(await sb.rpc('admin_ai_list')); },
+  async adminSetBilling(aid, lim, en, pl) { return this.chk(await sb.rpc('admin_set_billing', {aid, lim, en, pl})); },
   async approveSchool(aid, uid, ok) { return this.chk(await sb.rpc('approve_school', {p_academy: aid, p_user: uid, p_ok: ok})); },
   async ranking(aid, from, to) { return this.chk(await sb.rpc('study_ranking', {p_academy: aid, p_from: from, p_to: to})) || []; },
   async posts(aid) { return this.chk(await sb.from('posts_v').select('*').eq('academy_id', aid).order('created_at', {ascending: false}).limit(200)); },
@@ -1657,6 +1661,8 @@ function vSettings() {
   <label>학생 문제 풀이 (AI)<select data-in="community" data-k="solve" ${isOwner() ? '' : 'disabled'}>${[['on', '켜기'], ['off', '끄기']].map(([v, l]) => `<option value="${v}" ${(acSet().solve || 'on') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
   <label>학생 1명 하루 최대<select data-in="community" data-k="solveLimit" ${isOwner() ? '' : 'disabled'}>${['5', '10', '20', '30', '50'].map(v => `<option value="${v}" ${String(acSet().solveLimit || '20') === v ? 'selected' : ''}>${v}문제</option>`).join('')}</select></label></div>
   <p class="small" style="margin-bottom:0">${isOwner() ? '게시판의 익명 글도 선생님은 작성자를 볼 수 있고, 어떤 글이든 삭제할 수 있어요.' : '관리자만 바꿀 수 있어요.'}</p></div>` : ''}
+  ${!DEMO ? aiUsageCard() : ''}
+  ${!DEMO && S.isAdmin ? aiAdminCard() : ''}
   <div class="card staff-only"><h3>${icon('home', 18)} 학원</h3>
   <label>학원 이름 <span class="small">(보고서 하단에 표시돼요)</span><input id="st-acad" value="${esc(S.academy.name)}" ${canAcad ? '' : 'disabled'}></label>
   ${canAcad ? '<div class="row" style="margin-top:10px"><button class="btn r s" data-act="saveAcademy">학원 이름 저장</button></div>' : '<p class="small">학원 이름을 바꿀 권한이 없어요.</p>'}
@@ -1686,7 +1692,7 @@ function vSettings() {
   <button class="btn r s" data-act="saveApp">${icon('file', 16)} 앱 파일 복사하기</button></div>
 
   <div class="card"><h3>${icon('info', 18)} 정보</h3>
-  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.6 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
+  <div class="srow"><div class="lab"><b>${esc(CFG.APP_NAME || 'hit100')}</b><span>버전 6.7 · ${DEMO ? '데모 모드 (이 기기 저장)' : '서버 연결됨'}</span></div></div>
   <div class="srow"><div class="lab"><b>로그아웃</b><span>${esc(S.user.email)}</span></div><button class="btn o s" data-act="logout">${icon('logout', 16)} 로그아웃</button></div></div>
   </div>`;
 }
@@ -1751,7 +1757,52 @@ function vSolveView() {
 }
 function fmtSolve(t) { return esc(String(t || '')).replace(/\n/g, '<br>'); }
 
+/* ===== AI 사용량 · 한도 · 학원 API 키 ===== */
+const AI_ACT = {solve: '문제 풀이', omr: '사진 채점', analyze: '심층 분석', exam: '시험 가져오기', types: '유형 분석', gen: '문제 생성', 'gen-passage': '문제 생성(지문)', 'gen-review': '문제 검수'};
+function aiLoad(key, fn) {
+  const c = S._aic || (S._aic = {});
+  if (key in c) return c[key];
+  c[key] = null; fn().then(d => { c[key] = d; render(); }).catch(e => { c[key] = {error: String(e)}; render(); });
+  return null;
+}
+const won = n => Math.round(Number(n) || 0).toLocaleString() + '원';
+function aiUsageCard() {
+  if (isStudent()) return '';
+  const d = aiLoad('ais|' + S.academy.id + '|' + (S._aiv || 0), () => API.aiStatus(S.academy.id));
+  let body = '<p class="small">불러오는 중…</p>';
+  if (d && d.error) body = `<p class="small">불러오지 못했어요: ${esc(d.error)}${/ai_status/.test(d.error) ? ' (Supabase에서 007_ai_billing.sql 실행 필요)' : ''}</p>`;
+  else if (d) {
+    const lim = d.limit, pct = lim ? Math.min(100, Math.round(d.used / lim * 100)) : (lim === 0 ? 100 : 0);
+    const acts = Object.entries(d.by_action || {}).map(([k, v]) => `<span class="chip">${esc(AI_ACT[k] || k)} ${v}회</span>`).join('') || '<span class="small">이번 달 사용 기록 없음</span>';
+    body = d.byok ? `<div class="ai-big ok">학원 API 키 사용 중 <span class="small">(…${esc(d.key_tail || '')})</span></div><p class="small" style="margin:4px 0 10px">AI 비용은 학원 Anthropic 계정에서 나가요. 이번 달 약 ${won(d.byok_used)}</p>`
+      : `<div class="ai-big">${won(d.used)} <span class="small">/ ${lim == null ? '무제한' : won(lim)}</span></div>
+        ${lim != null ? `<div class="ai-bar"><i style="width:${pct}%;${pct >= 90 ? 'background:var(--red)' : ''}"></i></div><p class="small" style="margin:6px 0 10px">${pct >= 100 ? '⚠ 한도를 다 써서 AI 기능이 멈췄어요.' : `남은 금액 약 ${won(lim - d.used)}`} · 매달 1일 초기화</p>` : '<p class="small" style="margin:6px 0 10px">한도 없이 쓰는 학원이에요.</p>'}`;
+    body += `<div class="dchips" style="margin-bottom:10px">${acts}</div>`;
+    if (!d.enabled) body += '<p class="small" style="color:var(--red)">이 학원은 AI 기능이 꺼져 있어요.</p>';
+    if (isOwner()) body += `<details><summary class="small"><b>학원 API 키 등록</b> (한도 없이 학원 비용으로 쓰기)</summary>
+      <p class="small">console.anthropic.com → API Keys → Create Key로 받은 <b>sk-ant-api…</b> 키를 넣으세요. 키는 서버에만 저장되고 다시 보여주지 않아요.</p>
+      <div class="row"><input id="ai-key" type="password" autocomplete="off" placeholder="sk-ant-api03-…" style="flex:1"><button class="btn r sm" data-act="aiKeySave">저장</button>${d.byok ? '<button class="btn o sm" data-act="aiKeyDel">키 삭제</button>' : ''}</div></details>`;
+  }
+  return `<div class="card staff-only"><h3>${icon('chart', 18)} AI 사용량 (이번 달)</h3>${body}<p class="small" style="margin-bottom:0;color:var(--mut,#888)">금액은 토큰 수로 계산한 추정치예요.</p></div>`;
+}
+function aiAdminCard() {
+  const d = aiLoad('aia|' + (S._aiv || 0), () => API.adminAiList());
+  const opts = [['', '무제한'], ['0', '0원(사용 불가)'], ['3000', '3,000원'], ['5000', '5,000원'], ['10000', '1만원'], ['30000', '3만원'], ['50000', '5만원'], ['100000', '10만원'], ['300000', '30만원']];
+  let rows = '<p class="small">불러오는 중…</p>';
+  if (d && d.error) rows = `<p class="small">${esc(d.error)}</p>`;
+  else if (d) rows = `<div class="ai-tbl">${d.map(a => { const cur = a.monthly_limit_krw == null ? '' : String(a.monthly_limit_krw); return `<div class="ai-row">
+    <div class="grow"><b>${esc(a.name)}</b><span class="small"> · ${a.members}명 · ${a.byok ? '학원 키' : ({owner: '내 학원', unlimited: '무제한', free: '체험'}[a.plan] || esc(a.plan || '체험'))}${a.ai_enabled ? '' : ' · <b style="color:var(--red)">AI 꺼짐</b>'}</span><div class="small">이번 달 ${won(a.used)}${a.byok ? ` (학원 키 ${won(a.byok_used)})` : ''}</div></div>
+    <select id="lim-${a.academy_id}">${opts.map(([v, l]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`).join('')}${opts.some(([v]) => v === cur) ? '' : `<option selected value="${cur}">${won(cur)}</option>`}</select>
+    <label class="small row" style="gap:4px"><input type="checkbox" id="en-${a.academy_id}" ${a.ai_enabled ? 'checked' : ''} style="width:auto;min-height:0">켜기</label>
+    <button class="btn o sm" data-act="aiAdminSave" data-id="${a.academy_id}">저장</button></div>`; }).join('')}</div>`;
+  return `<div class="card" style="grid-column:1/-1"><h3>${icon('key', 18)} 전체 학원 AI 한도 <span class="small">앱 관리자 전용</span></h3>
+    <p class="small" style="margin-top:0">서버 키로 쓰는 학원의 한 달 AI 비용 한도예요. 새 학원은 기본 월 5,000원(체험)으로 시작하고, 학원 키를 등록한 곳은 한도와 상관없이 학원 비용으로 써요.</p>${rows}</div>`;
+}
+
 const ACT = {
+  aiKeySave: async () => { const v = (document.getElementById('ai-key') || {}).value || ''; if (!v.trim()) { toast('키를 입력하세요'); return; } try { await API.setAiKey(S.academy.id, v.trim()); S._aiv = (S._aiv || 0) + 1; toast('학원 API 키를 저장했어요'); render(); } catch (e) { toast('실패: ' + e); } },
+  aiKeyDel: async () => { if (!confirm('학원 API 키를 삭제할까요? 삭제하면 다시 월 한도 안에서만 쓸 수 있어요.')) return; try { await API.setAiKey(S.academy.id, ''); S._aiv = (S._aiv || 0) + 1; toast('삭제했어요'); render(); } catch (e) { toast('실패: ' + e); } },
+  aiAdminSave: async el => { const id = el.dataset.id, v = document.getElementById('lim-' + id).value, en = document.getElementById('en-' + id).checked; try { await API.adminSetBilling(id, v === '' ? null : +v, en, v === '' ? 'unlimited' : 'free'); S._aiv = (S._aiv || 0) + 1; toast('저장했어요'); render(); } catch (e) { toast('실패: ' + e); } },
   solveRm: el => { solveS().imgs.splice(+el.dataset.i, 1); render(); },
   solveGo: async () => {
     const sv = solveS(); sv.text = (document.getElementById('sv-text') || {}).value || ''; sv.ask = (document.getElementById('sv-ask') || {}).value || ''; sv.subj = (document.getElementById('sv-subj') || {}).value || '자동';

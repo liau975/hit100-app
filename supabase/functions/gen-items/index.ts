@@ -1,6 +1,42 @@
 // hit100 · AI 문항 생성 (Supabase Edge Function: gen-items)
 // 필요한 비밀값: ANTHROPIC_API_KEY  (Edge Functions → Secrets 에 등록)
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { AsyncLocalStorage } from "node:async_hooks";
+
+// ===== AI 사용량 기록 =====
+// 요청마다 Anthropic 호출의 토큰을 모아 두었다가 끝나면 ai_usage에 기록한다.
+// 가격(USD / 100만 토큰)은 Secrets의 AI_PRICES(JSON)로 바꿀 수 있다. 환율은 USD_KRW.
+const PRICES: Record<string, { in: number; out: number }> = Object.assign({
+  opus: { in: 4, out: 20 }, sonnet: { in: 2, out: 10 }, haiku: { in: 0.1, out: 0.5 },
+}, (() => { try { return JSON.parse(Deno.env.get("AI_PRICES") || "{}"); } catch { return {}; } })());
+const USD_KRW = Number(Deno.env.get("USD_KRW")) || 1450;
+const DEFAULT_LIMIT = 5000;
+const als = new AsyncLocalStorage<any>();
+const _fetch = globalThis.fetch;
+globalThis.fetch = (async (input: any, init?: any) => {
+  const r = await _fetch(input, init);
+  const ctx = als.getStore();
+  const url = typeof input === "string" ? input : (input?.url || String(input));
+  if (ctx && url.startsWith("https://api.anthropic.com/")) {
+    try {
+      const o = await r.clone().json();
+      const u = o?.usage;
+      if (u) ctx.calls.push({ model: String(o.model || ""), inT: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0), cacheR: u.cache_read_input_tokens || 0, outT: u.output_tokens || 0, ws: u.server_tool_use?.web_search_requests || 0 });
+    } catch (_) { /* 기록 실패는 무시 */ }
+  }
+  return r;
+}) as typeof fetch;
+function priceOf(model: string) { const m = model.toLowerCase(); return m.includes("opus") ? PRICES.opus : m.includes("haiku") ? PRICES.haiku : PRICES.sonnet; }
+function costKrw(calls: any[]) {
+  let usd = 0;
+  for (const c of calls) { const p = priceOf(c.model); usd += (c.inT * p.in + c.cacheR * p.in * 0.1 + c.outT * p.out) / 1e6 + c.ws * 0.01; }
+  return Math.round(usd * USD_KRW * 100) / 100;
+}
+function serviceDb() {
+  let k = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  if (!k) { try { k = Object.values(JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}"))[0] as string || ""; } catch (_) { /* */ } }
+  return k ? createClient(Deno.env.get("SUPABASE_URL")!, k, { auth: { persistSession: false } }) : null;
+}
 
 const MODEL = Deno.env.get("AI_MODEL") || "claude-sonnet-5-5";
 // Supabase 유료(Pro) 플랜이면 Secrets에 AI_LONG=1 → 함수가 최대 400초까지 돌 수 있으므로 더 길게 생각하게 한다
@@ -76,11 +112,46 @@ const TOOL = {
   },
 };
 
-Deno.serve(async (req) => {
+Deno.serve((req) => {
+  const ctx: any = { calls: [], meta: null };
+  return als.run(ctx, async () => {
+    const res = await handle(req, ctx);
+    if (ctx.meta && ctx.calls.length) {
+      try {
+        const svc = serviceDb();
+        const tot = ctx.calls.reduce((a: any, c: any) => ({ i: a.i + c.inT + c.cacheR, o: a.o + c.outT }), { i: 0, o: 0 });
+        const models = [...new Set(ctx.calls.map((c: any) => c.model.replace(/^claude-/, "")))].join(",");
+        if (svc) await svc.from("ai_usage").insert({ academy_id: ctx.meta.academy_id, user_id: ctx.meta.user_id, action: ctx.meta.action, model: models, in_tokens: tot.i, out_tokens: tot.o, cost_krw: costKrw(ctx.calls), byok: ctx.meta.byok });
+      } catch (_) { /* 기록 실패해도 결과는 돌려준다 */ }
+    }
+    return res;
+  });
+});
+
+// 학원별 키·한도 확인. 학원 키가 있으면 그 키로, 없으면 서버 키로 쓰되 월 한도를 넘으면 막는다.
+async function gate(academy_id: string): Promise<{ key?: string; byok?: boolean; error?: string; status?: number }> {
+  const svc = serviceDb();
+  const own = Deno.env.get("ANTHROPIC_API_KEY") || "";
+  if (!svc) return own ? { key: own, byok: false } : { error: "서버에 ANTHROPIC_API_KEY가 등록되지 않았어요.", status: 500 };
+  const [{ data: k }, { data: bl }] = await Promise.all([
+    svc.from("academy_ai_keys").select("api_key").eq("academy_id", academy_id).maybeSingle(),
+    svc.from("academy_billing").select("monthly_limit_krw, ai_enabled").eq("academy_id", academy_id).maybeSingle(),
+  ]);
+  if (bl && bl.ai_enabled === false) return { error: "이 학원은 AI 기능이 꺼져 있어요. 앱 관리자에게 문의하세요.", status: 403 };
+  if (k?.api_key) return { key: k.api_key, byok: true };
+  if (!own) return { error: "서버에 ANTHROPIC_API_KEY가 등록되지 않았어요.", status: 500 };
+  const limit = bl ? bl.monthly_limit_krw : DEFAULT_LIMIT;
+  if (limit !== null && limit !== undefined) {
+    const { data: used } = await svc.rpc("ai_month_cost", { aid: academy_id });
+    if (Number(used || 0) >= limit) return { error: `이번 달 AI 사용 한도(${Number(limit).toLocaleString()}원)를 다 썼어요. 원장님이 설정 → AI 사용량에서 학원 API 키를 등록하거나, 앱 관리자에게 한도를 늘려 달라고 하세요.`, status: 402 };
+  }
+  return { key: own, byok: false };
+}
+
+async function handle(req: Request, ctx: any): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const key = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!key) return j({ error: "서버에 ANTHROPIC_API_KEY가 등록되지 않았어요." }, 500);
+    let key = "";
 
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY") || req.headers.get("apikey") || "", {
       global: { headers: { Authorization: req.headers.get("Authorization") || "" } },
@@ -90,8 +161,13 @@ Deno.serve(async (req) => {
 
     const b = await req.json();
     const { data: mem } = await sb.from("members").select("role").eq("user_id", user.id).eq("academy_id", b.academy_id).maybeSingle();
+    if (!mem) return j({ error: "학원 멤버만 쓸 수 있어요." }, 403);
+    if (mem.role === "student" && b.action !== "solve") return j({ error: "선생님 계정만 쓸 수 있어요." }, 403);
+    const g = await gate(b.academy_id);
+    if (g.error) return j({ error: g.error }, g.status || 400);
+    key = g.key!;
+    ctx.meta = { academy_id: b.academy_id, user_id: user.id, action: String(b.action || (b.step ? "gen-" + b.step : "gen")).slice(0, 20), byok: !!g.byok };
     if (b.action === "solve") {
-      if (!mem) return j({ error: "학원 멤버만 쓸 수 있어요." }, 403);
       const { data: ac } = await sb.from("academies").select("settings").eq("id", b.academy_id).maybeSingle();
       const st = (ac?.settings || {}) as any;
       if (mem.role === "student") {
@@ -286,7 +362,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     return j({ error: String((e as Error)?.message || e) }, 500);
   }
-});
+}
 
 // ================= 시험 정답 자동 가져오기 (action: "exam") =================
 // 웹 검색으로 평가원·교육청·EBSi 정답표를 찾아 두 곳 이상 대조한 뒤 구조화해서 돌려준다.
